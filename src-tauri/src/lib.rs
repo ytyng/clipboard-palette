@@ -119,7 +119,6 @@ pub fn run() {
     let initial_data = read_stdin_data().ok();
     
     tauri::Builder::default()
-        .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
             #[cfg(desktop)]
             app.handle().plugin(tauri_plugin_cli::init())?;
