@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::io::{self, Read};
 use std::sync::Mutex;
 use tauri::{Manager, State};
+use clap::Parser;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ClipboardItem {
@@ -20,13 +21,34 @@ pub struct AppState {
     pub data: Mutex<Option<AppData>>,
 }
 
+#[derive(Parser)]
+#[command(name = "clipboard-palette")]
+#[command(about = "A clipboard palette application")]
+struct Args {
+    #[arg(short = 'm', long = "multiline", help = "Multiline mode")]
+    multiline: bool,
+
+    #[arg(short = 'j', long = "json", help = "JSON mode")]
+    json: bool,
+
+    #[arg(short = 's', long = "split-empty-line", help = "Split by empty lines (default: 1 line)", value_name = "COUNT")]
+    split_empty_line: Option<Option<usize>>,
+}
+
 #[tauri::command]
 fn get_clipboard_data(state: State<AppState>) -> Result<AppData, String> {
+    println!("get_clipboard_data called");
     let data = state.data.lock().unwrap();
-    
+
     match &*data {
-        Some(app_data) => Ok(app_data.clone()),
-        None => Err("No data available".to_string()),
+        Some(app_data) => {
+            println!("Returning app_data with {} items", app_data.items.len());
+            Ok(app_data.clone())
+        }
+        None => {
+            println!("No data available in state");
+            Err("No data available".to_string())
+        }
     }
 }
 
@@ -51,18 +73,20 @@ fn read_stdin_data() -> Result<AppData, String> {
         println!("Input data received: {}", buffer);
     }
 
-    // CLI 引数を取得
-    let args: Vec<String> = std::env::args().collect();
+    // CLI 引数を解析
+    let args = Args::parse();
     let is_default_data = buffer.trim().starts_with('[');
-    
-    let mode = if args.contains(&"--multiline".to_string()) || args.contains(&"-m".to_string()) {
-        "multiline"
-    } else if args.contains(&"--split-empty-line".to_string()) || args.contains(&"-s".to_string()) {
-        "split-empty-line"
-    } else if args.contains(&"--json".to_string()) || args.contains(&"-j".to_string()) || is_default_data {
-        "json"
+
+    // モードと設定を決定
+    let (mode, split_empty_line_count) = if args.multiline {
+        ("multiline", 1)
+    } else if let Some(count_opt) = args.split_empty_line {
+        let count = count_opt.unwrap_or(1); // --split-empty-line または --split-empty-line=N
+        ("split-empty-line", count)
+    } else if args.json || is_default_data {
+        ("json", 1)
     } else {
-        "normal"
+        ("normal", 1)
     };
 
     let items = match mode {
@@ -77,14 +101,14 @@ fn read_stdin_data() -> Result<AppData, String> {
                 .collect()
         }
         "split-empty-line" => {
+            // 指定された数の空行で分割
+            let delimiter = "\n".repeat(split_empty_line_count + 1);
             buffer
-                .split("\n\n")
+                .split(&delimiter)
                 .filter(|section| !section.trim().is_empty())
                 .map(|section| {
-                    let lines: Vec<&str> = section.lines().collect();
-                    let label = lines.first().unwrap_or(&"").to_string();
                     ClipboardItem {
-                        label,
+                        label: section.to_string(),
                         text: section.to_string(),
                     }
                 })
@@ -116,18 +140,27 @@ fn read_stdin_data() -> Result<AppData, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // 起動時に標準入力を読み取る
-    let initial_data = read_stdin_data().ok();
-    
+    let initial_data = match read_stdin_data() {
+        Ok(data) => {
+            println!("Successfully read stdin data: {} items", data.items.len());
+            Some(data)
+        }
+        Err(e) => {
+            eprintln!("Error reading stdin data: {}", e);
+            None
+        }
+    };
+
     tauri::Builder::default()
         .setup(|app| {
             #[cfg(desktop)]
             app.handle().plugin(tauri_plugin_cli::init())?;
-            
+
             // アプリケーションステートを設定
             app.manage(AppState {
                 data: Mutex::new(initial_data),
             });
-            
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![get_clipboard_data])

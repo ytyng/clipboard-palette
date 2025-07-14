@@ -33,9 +33,9 @@
   onclick={() => copyToClipboard(item.text)}
 >
   {#if item.label == item.text}
-    <pre class="text-sm whitespace-pre-wrap text-gray-700">{item.text}</pre>
+    <pre class="text-sm whitespace-pre-wrap text-gray-800">{item.text}</pre>
   {:else}
-    <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-2">
+    <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-50 mb-2">
       {item.label}
     </h2>
     <pre class="text-xs whitespace-pre-wrap text-gray-500">{item.text}</pre>

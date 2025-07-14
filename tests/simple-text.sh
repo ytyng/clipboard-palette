@@ -2,4 +2,4 @@
 
 cd $(dirname $0)/..
 
-echo "Hello, World!" | ./src-tauri/target/debug/clipboard-palette
+echo "Hello, World!" | ./src-tauri/target/release/clipboard-palette
