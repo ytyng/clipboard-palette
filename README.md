@@ -1,0 +1,2 @@
+# clipboard-palette
+
