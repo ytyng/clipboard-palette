@@ -1,0 +1,165 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "tauri dev",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "tauri", "dev"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "problemMatcher": [],
+      "runOptions": {
+        "runOn": "default"
+      }
+    },
+    {
+      "label": "tauri build",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "tauri", "build"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "frontend dev",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "dev"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "rust build (debug)",
+      "type": "shell",
+      "command": "cargo",
+      "args": ["build"],
+      "options": {
+        "cwd": "${workspaceFolder}/src-tauri"
+      },
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "problemMatcher": [
+        "$rustc"
+      ]
+    },
+    {
+      "label": "rust build (release)",
+      "type": "shell",
+      "command": "cargo",
+      "args": ["build", "--release"],
+      "options": {
+        "cwd": "${workspaceFolder}/src-tauri"
+      },
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "problemMatcher": [
+        "$rustc"
+      ]
+    },
+    {
+      "label": "frontend build",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "build"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "test stdin normal",
+      "type": "shell",
+      "command": "echo 'Hello, World!' | ./src-tauri/target/debug/clipboard-palette",
+      "group": "test",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "dependsOn": "rust build (debug)",
+      "problemMatcher": []
+    },
+    {
+      "label": "test stdin multiline",
+      "type": "shell",
+      "command": "echo -e 'Hello, World!\\nこんにちは、世界！\\n最後の行' | ./src-tauri/target/debug/clipboard-palette --multiline",
+      "group": "test",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "dependsOn": "rust build (debug)",
+      "problemMatcher": []
+    },
+    {
+      "label": "test stdin json",
+      "type": "shell",
+      "command": "echo '[{\"label\": \"Copy text\", \"text\": \"Hello, World!\"}, {\"label\": \"日本語\", \"text\": \"こんにちは、世界！\"}]' | ./src-tauri/target/debug/clipboard-palette --json",
+      "group": "test",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "dependsOn": "rust build (debug)",
+      "problemMatcher": []
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Tauri Dev",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "tauri", "dev"],
+      "console": "integratedTerminal",
+      "env": {
+        "NODE_ENV": "development"
+      },
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "name": "Frontend Dev Server",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "console": "integratedTerminal",
+      "env": {
+        "NODE_ENV": "development"
+      },
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "name": "Test with stdin - Normal",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/src-tauri/target/debug/clipboard-palette",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "env": {},
+      "stdio": ["pipe", "pipe", "pipe"]
+    },
+    {
+      "name": "Test with stdin - Multiline",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/src-tauri/target/debug/clipboard-palette",
+      "args": ["--multiline"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "env": {},
+      "stdio": ["pipe", "pipe", "pipe"]
+    },
+    {
+      "name": "Test with stdin - JSON",
+      "type": "lldb", 
+      "request": "launch",
+      "program": "${workspaceFolder}/src-tauri/target/debug/clipboard-palette",
+      "args": ["--json"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "env": {},
+      "stdio": ["pipe", "pipe", "pipe"]
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Launch Tauri Development",
+      "configurations": ["Tauri Dev"],
+      "stopAll": true
+    }
+  ]
+}

@@ -13,12 +13,34 @@
     "windows": [
       {
         "title": "clipboard-palette",
-        "width": 800,
-        "height": 600
+        "width": 400,
+        "height": 400
       }
     ],
     "security": {
       "csp": null
+    }
+  },
+  "plugins": {
+    "cli": {
+      "description": "Clipboard Palette - Display buttons to copy text to clipboard",
+      "args": [
+        {
+          "name": "multiline",
+          "short": "m",
+          "description": "Split input by newlines and show separate buttons"
+        },
+        {
+          "name": "split-empty-line",
+          "short": "s",
+          "description": "Split input by empty lines and show separate buttons"
+        },
+        {
+          "name": "json",
+          "short": "j",
+          "description": "Parse input as JSON array with label and text fields"
+        }
+      ]
     }
   },
   "bundle": {

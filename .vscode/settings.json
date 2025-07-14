@@ -1,3 +1,41 @@
 {
-  "svelte.enable-ts-plugin": true
+  "rust-analyzer.linkedProjects": ["./src-tauri/Cargo.toml"],
+  "rust-analyzer.cargo.target": "aarch64-apple-darwin",
+  "svelte.enable-ts-plugin": true,
+  "typescript.preferences.includePackageJsonAutoImports": "auto",
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+  "files.associations": {
+    "*.svelte": "svelte"
+  },
+  "emmet.includeLanguages": {
+    "svelte": "html"
+  },
+  "tailwindCSS.includeLanguages": {
+    "svelte": "html"
+  },
+  "tailwindCSS.experimental.classRegex": [
+    ["class:([^=]+)=[\"']([^\"']*)[\"']", 2],
+    ["class=\"([^\"]+)\"", 1]
+  ],
+  "files.exclude": {
+    "**/.git": true,
+    "**/.svn": true,
+    "**/.hg": true,
+    "**/CVS": true,
+    "**/.DS_Store": true,
+    "**/Thumbs.db": true,
+    "node_modules": true,
+    "src-tauri/target": true,
+    ".svelte-kit": true,
+    "build": true
+  },
+  "search.exclude": {
+    "node_modules": true,
+    "src-tauri/target": true,
+    ".svelte-kit": true,
+    "build": true
+  }
 }
