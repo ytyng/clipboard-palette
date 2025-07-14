@@ -38,7 +38,7 @@
     <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-50 mb-2">
       {item.label}
     </h2>
-    <pre class="text-xs whitespace-pre-wrap text-gray-500">{item.text}</pre>
+    <pre class="text-xs whitespace-pre-wrap text-gray-500 line-clamp-10">{item.text}</pre>
   {/if}
   <div class="absolute top-2 right-2 z-10">
     <svg
