@@ -19,8 +19,7 @@
     ],
     "security": {
       "csp": null
-    },
-    "singleInstance": false
+    }
   },
   "plugins": {
     "cli": {
