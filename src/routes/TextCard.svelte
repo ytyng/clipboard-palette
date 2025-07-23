@@ -8,16 +8,21 @@
 
   interface Props {
     item: ClipboardItem;
+    isActive: boolean;
+    onCopy: () => void;
   }
 
-  let { item }: Props = $props();
+  let { item, isActive, onCopy }: Props = $props();
 
+  let isClicked = $state(false);
   let showSuccessOverlay = $state(false);
 
   async function copyToClipboard(text: string) {
     try {
       await navigator.clipboard.writeText(text);
       console.log("Text copied to clipboard:", text);
+      onCopy(); // 親コンポーネントに通知
+      isClicked = true;
       showSuccessOverlay = true;
       setTimeout(() => {
         showSuccessOverlay = false;
@@ -26,10 +31,21 @@
       console.error("Failed to copy to clipboard:", e);
     }
   }
+
+  // 背景色を決定する関数
+  function getBackgroundClass() {
+    if (isActive) {
+      return "bg-emerald-100 dark:bg-emerald-900/30"; // 薄い緑（アクティブ）
+    } else if (isClicked) {
+      return "bg-gray-200 dark:bg-gray-600"; // 薄いグレー（クリック済み）
+    } else {
+      return "bg-white dark:bg-gray-800"; // デフォルト
+    }
+  }
 </script>
 
 <button
-  class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 relative cursor-pointer hover:bg-indigo-50 dark:hover:bg-gray-700 transition-colors text-left"
+  class="{getBackgroundClass()} rounded-lg shadow-md p-4 relative cursor-pointer hover:bg-indigo-50 dark:hover:bg-gray-700 transition-colors text-left"
   onclick={() => copyToClipboard(item.text)}
 >
   {#if item.label == item.text}
@@ -38,7 +54,8 @@
     <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-50 mb-2">
       {item.label}
     </h2>
-    <pre class="text-xs whitespace-pre-wrap text-gray-500 line-clamp-10">{item.text}</pre>
+    <pre
+      class="text-xs whitespace-pre-wrap text-gray-500 line-clamp-10">{item.text}</pre>
   {/if}
   <div class="absolute top-2 right-2 z-10">
     <svg

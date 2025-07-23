@@ -18,6 +18,11 @@
   let appData = $state<AppData | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
+  let activeItemIndex = $state<number | null>(null);
+
+  function handleItemClick(index: number) {
+    activeItemIndex = index;
+  }
 
   onMount(async () => {
     try {
@@ -28,7 +33,6 @@
       loading = false;
     }
   });
-
 </script>
 
 <main class="min-h-screen bg-gray-100 dark:bg-gray-900">
@@ -40,8 +44,12 @@
     </div>
   {:else if appData && appData.items.length > 0}
     <div class="flex flex-col p-4 gap-4">
-      {#each appData.items as item}
-        <TextCard {item} />
+      {#each appData.items as item, index}
+        <TextCard
+          {item}
+          isActive={activeItemIndex === index}
+          onCopy={() => handleItemClick(index)}
+        />
       {/each}
     </div>
 
