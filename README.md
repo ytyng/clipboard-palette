@@ -2,7 +2,7 @@
 
 ![](src-tauri/icons/128x128@2x.png)
 
-A Tauri application that displays buttons to copy text from standard input to the clipboard.
+An application that displays buttons to copy text from standard input to the clipboard.
 
 ![](documents/images/flashcap-20260130-113144.png)
 
