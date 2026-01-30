@@ -4,6 +4,8 @@
 
 An application that displays buttons to copy text from standard input to the clipboard.
 
+![](documents/images/flashcap-20260130-175555.png)
+
 ![](documents/images/flashcap-20260130-113144.png)
 
 ## Installation & Build
