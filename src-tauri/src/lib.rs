@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::io::{self, Read};
+use std::io::{self, IsTerminal, Read};
 use std::sync::Mutex;
 use tauri::{Manager, State};
 use clap::Parser;
@@ -24,6 +24,11 @@ pub struct AppState {
 #[derive(Parser)]
 #[command(name = "clipboard-palette")]
 #[command(about = "A clipboard palette application")]
+#[command(after_help = r#"JSON format:
+  Input a JSON array via stdin. Each element must have "label" and "text" fields.
+  Example:
+    [{"label": "Button Label", "text": "Text to copy"}, ...]
+  "label" is displayed on the button, "text" is copied to clipboard on click."#)]
 struct Args {
     #[arg(short = 'm', long = "multiline", help = "Multiline mode")]
     multiline: bool,
@@ -52,29 +57,33 @@ fn get_clipboard_data(state: State<AppState>) -> Result<AppData, String> {
     }
 }
 
-fn read_stdin_data() -> Result<AppData, String> {
-    // 標準入力からデータを読み取る
-    let mut buffer = String::new();
-    io::stdin()
-        .read_to_string(&mut buffer)
-        .map_err(|e| format!("Failed to read from stdin: {}", e))?;
-
-    // 読み取ったデータをログ出力
-    println!("Input data received: {}", buffer);
-
-    // 空の入力をチェックして、デフォルトデータを使用
-    let is_empty_input = buffer.trim().is_empty();
-    if is_empty_input {
-        println!("Empty input detected, using default data");
-        buffer = r#"[
+fn default_data_buffer() -> String {
+    r#"[
     {"label": "ラベル1", "text": "テキスト1"},
     {"label": "ラベル2", "text": "テキスト2"}
-]"#.to_string();
-        println!("Input data received: {}", buffer);
-    }
+]"#.to_string()
+}
 
-    // CLI 引数を解析
-    let args = Args::parse();
+fn read_stdin_data(args: &Args) -> Result<AppData, String> {
+    // TTY (ターミナル直接起動) ならstdinを読まずデフォルトデータを使用
+    let (buffer, is_empty_input) = if io::stdin().is_terminal() {
+        println!("stdin is a terminal, using default data");
+        (default_data_buffer(), true)
+    } else {
+        // パイプ経由の場合のみstdinを読み取る
+        let mut buf = String::new();
+        io::stdin()
+            .read_to_string(&mut buf)
+            .map_err(|e| format!("Failed to read from stdin: {}", e))?;
+        println!("Input data received ({} bytes)", buf.len());
+        let empty = buf.trim().is_empty();
+        if empty {
+            println!("Empty input detected, using default data");
+            buf = default_data_buffer();
+        }
+        (buf, empty)
+    };
+
     let is_default_data = buffer.trim().starts_with('[');
 
     // モードと設定を決定
@@ -139,8 +148,10 @@ fn read_stdin_data() -> Result<AppData, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // --help 時に stdin をブロックしないよう、先に引数を解析
+    let args = Args::parse();
     // 起動時に標準入力を読み取る
-    let initial_data = match read_stdin_data() {
+    let initial_data = match read_stdin_data(&args) {
         Ok(data) => {
             println!("Successfully read stdin data: {} items", data.items.len());
             Some(data)
