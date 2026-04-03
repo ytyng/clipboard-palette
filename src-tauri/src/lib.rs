@@ -75,7 +75,7 @@ fn read_stdin_data(args: &Args) -> Result<AppData, String> {
         io::stdin()
             .read_to_string(&mut buf)
             .map_err(|e| format!("Failed to read from stdin: {}", e))?;
-        println!("Input data received: {}", buf);
+        println!("Input data received ({} bytes)", buf.len());
         let empty = buf.trim().is_empty();
         if empty {
             println!("Empty input detected, using default data");
