@@ -8,6 +8,25 @@ An application that displays buttons to copy text from standard input to the cli
 
 ![](documents/images/flashcap-20260130-113144.png)
 
+## Download
+
+Get the latest `clipboard-palette_<version>_universal.dmg` from the
+[Releases page](https://github.com/ytyng/clipboard-palette/releases).
+It is a universal binary (Intel + Apple Silicon), signed with a Developer ID
+certificate and notarized by Apple, so it opens without a Gatekeeper warning.
+
+This app reads from standard input, so it is meant to be launched from a shell.
+After dragging it to `/Applications`, link the binary onto your `PATH`:
+
+```shell
+sudo ln -s /Applications/clipboard-palette.app/Contents/MacOS/clipboard-palette \
+  /usr/local/bin/clipboard-palette
+```
+
+`/usr/local/bin` needs `sudo` unless Homebrew already took ownership of it.
+Any other directory on your `PATH` (`~/.local/bin`, for example) works too.
+All the examples under [Usage](#usage) assume this link exists.
+
 ## Installation & Build
 
 ### Setup Development Environment
@@ -29,6 +48,22 @@ npm run tauri build
 ```
 
 The built executable will be created at `src-tauri/target/release/clipboard-palette`.
+A local build is ad-hoc signed (`signingIdentity: "-"`), so it is not distributable.
+
+### Publish a Release
+
+Bumps the version, pushes it to `main`, and runs the GitHub Actions release
+workflow (build → Developer ID signing → notarization → GitHub Release).
+
+```shell
+npm run release              # 0.1.0 -> 0.1.1 (patch, default)
+npm run release -- minor     # 0.1.0 -> 0.2.0
+npm run release -- major     # 0.1.0 -> 1.0.0
+```
+
+Requires a clean working tree on `main` that matches `origin/main`, and an
+authenticated `gh` CLI. See [documents/release.md](documents/release.md) for
+details and the required repository secrets.
 
 ## Usage
 
