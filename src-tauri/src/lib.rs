@@ -23,20 +23,57 @@ pub struct AppState {
 
 #[derive(Parser)]
 #[command(name = "clipboard-palette")]
-#[command(about = "A clipboard palette application")]
-#[command(after_help = r#"JSON format:
-  Input a JSON array via stdin. Each element must have "label" and "text" fields.
-  Example:
+#[command(version)]
+#[command(about = "Show clipboard copy buttons for text read from standard input.")]
+#[command(long_about = "Show clipboard copy buttons for text read from standard input.
+
+Text is read from standard input, split into items according to the selected
+mode, and each item is shown as a button. Clicking a button copies that item
+to the clipboard. With no options, the entire input becomes a single item,
+with leading and trailing whitespace stripped.
+
+If stdin is a terminal (no pipe), or the input is empty or whitespace only,
+sample data is shown instead so you can try the app out.")]
+#[command(after_long_help = r#"MODES:
+  Exactly one mode applies. If several are given, the first match in this
+  list wins: --multiline, --split-empty-line, --json.
+
+  normal (default)     Copy the entire input as one item, trimmed.
+  -m, --multiline      One item per line. Blank lines are dropped.
+  -s, --split-empty-line[=COUNT]
+                       Split into sections at COUNT consecutive empty lines
+                       (COUNT defaults to 1). The separator is a literal run
+                       of COUNT+1 newlines, so CRLF input and lines holding
+                       only spaces do not separate sections, and any extra
+                       newlines stay at the head of the next section.
+                       COUNT=0 splits on every newline.
+  -j, --json           Parse the input as a JSON array of objects. JSON is
+                       never auto-detected, so this flag is required.
+
+JSON FORMAT:
+  Each element needs a "label" and a "text" field. "label" is shown on the
+  button, "text" is what gets copied when the button is clicked.
+
     [{"label": "Button Label", "text": "Text to copy"}, ...]
-  "label" is displayed on the button, "text" is copied to clipboard on click."#)]
+
+EXAMPLES:
+  echo "Hello, World!" | clipboard-palette
+  printf 'first\nsecond\n' | clipboard-palette --multiline
+  printf 'a\n\n\nb\n' | clipboard-palette --split-empty-line=2
+  echo '[{"label":"Greeting","text":"Hello"}]' | clipboard-palette --json
+  pbpaste | clipboard-palette -m"#)]
+#[command(after_help = "Run with --help for modes, JSON format and examples.")]
 struct Args {
-    #[arg(short = 'm', long = "multiline", help = "Multiline mode")]
+    /// Show one button per line. Blank lines are dropped
+    #[arg(short = 'm', long = "multiline")]
     multiline: bool,
 
-    #[arg(short = 'j', long = "json", help = "JSON mode")]
+    /// Parse the input as a JSON array of {"label", "text"} objects
+    #[arg(short = 'j', long = "json")]
     json: bool,
 
-    #[arg(short = 's', long = "split-empty-line", help = "Split by empty lines (default: 1 line)", value_name = "COUNT")]
+    /// Split the input into sections at COUNT consecutive empty lines [default: 1]
+    #[arg(short = 's', long = "split-empty-line", value_name = "COUNT")]
     split_empty_line: Option<Option<usize>>,
 }
 
@@ -66,7 +103,8 @@ fn default_data_buffer() -> String {
 
 fn read_stdin_data(args: &Args) -> Result<AppData, String> {
     // TTY (ターミナル直接起動) ならstdinを読まずデフォルトデータを使用
-    let (buffer, is_empty_input) = if io::stdin().is_terminal() {
+    // is_default_data はサンプルデータで代替したかを表す
+    let (buffer, is_default_data) = if io::stdin().is_terminal() {
         println!("stdin is a terminal, using default data");
         (default_data_buffer(), true)
     } else {
@@ -84,15 +122,16 @@ fn read_stdin_data(args: &Args) -> Result<AppData, String> {
         (buf, empty)
     };
 
-    let is_default_data = buffer.trim().starts_with('[');
-
     // モードと設定を決定
+    // 先に一致したものが優先される (multiline > split-empty-line > json)
     let (mode, split_empty_line_count) = if args.multiline {
         ("multiline", 1)
     } else if let Some(count_opt) = args.split_empty_line {
         let count = count_opt.unwrap_or(1); // --split-empty-line または --split-empty-line=N
         ("split-empty-line", count)
     } else if args.json || is_default_data {
+        // サンプルデータは JSON 形式なので JSON モードで解析する。
+        // 入力内容による JSON の自動判定は行わない (--json の明示が必要)
         ("json", 1)
     } else {
         ("normal", 1)
@@ -142,7 +181,7 @@ fn read_stdin_data(args: &Args) -> Result<AppData, String> {
     Ok(AppData {
         items,
         mode: mode.to_string(),
-        is_default_data: is_empty_input,
+        is_default_data,
     })
 }
 

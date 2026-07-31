@@ -32,13 +32,23 @@ The built executable will be created at `src-tauri/target/release/clipboard-pale
 
 ## Usage
 
+### Help (--help, -h)
+
+```shell
+clipboard-palette --help
+```
+
+Prints the full help: available modes, the JSON format and examples. `-h` prints a short summary instead. `--version` / `-V` prints the version.
+
 ### Plain Text
 
 ```shell
 echo "Hello, World!" | clipboard-palette
 ```
 
-Displays a single button to copy `Hello, World!`.
+Displays a single button to copy `Hello, World!`. Leading and trailing whitespace is stripped.
+
+If stdin is a terminal (no pipe), or the input is empty or whitespace only, sample data is displayed instead so you can try the app out.
 
 ### Multiline Text (--multiline, -m)
 
@@ -46,7 +56,7 @@ Displays a single button to copy `Hello, World!`.
 echo -e "Hello, World!\nこんにちは、世界！" | clipboard-palette --multiline
 ```
 
-Splits by newlines and displays a copy button for each line.
+Splits by newlines and displays a copy button for each line. Blank lines are dropped.
 
 ### Split by Empty Lines (--split-empty-line, -s)
 
@@ -59,7 +69,7 @@ Splits by a single empty line and displays a copy button for each section.
 #### Split by N Consecutive Empty Lines
 
 ```shell
-# Split by 2 or more empty lines
+# Split at 2 consecutive empty lines
 echo -e "Section1\n\nSection2\n\n\nSection3" | clipboard-palette --split-empty-line=2
 
 # Alternative syntax
@@ -67,7 +77,9 @@ clipboard-palette --split-empty-line 2
 clipboard-palette -s 2
 ```
 
-By specifying a number, the text is split at N or more consecutive empty lines.
+By specifying a number, the text is split at N consecutive empty lines.
+
+The separator is a literal run of N+1 newlines. This means CRLF input and lines holding only spaces do not separate sections, and any extra newlines stay at the head of the next section. `-s 0` splits on every newline.
 
 ### JSON Format (--json, -j)
 
@@ -76,6 +88,12 @@ echo '[{"label": "Copy text", "text": "Hello, World!"}, {"label": "日本語", "
 ```
 
 Accepts JSON input and displays buttons based on each object's `label` and `text` fields.
+
+JSON is never auto-detected, so `--json` is required. Without it, input that happens to start with `[` (a log line such as `[2026-07-30] ERROR: ...`, for example) is treated as plain text.
+
+### Mode Precedence
+
+Exactly one mode applies. If several are given, the first match in this list wins: `--multiline`, `--split-empty-line`, `--json`.
 
 ## Tests
 
