@@ -53,9 +53,10 @@ clipboard-palette/
 ### テーマ制御
 
 - Tailwind の `dark:` バリアントは `@custom-variant` で `html[data-theme="dark"]` ベースに変更している (src/app.css)
-- `data-theme` は src/app.html のインラインスクリプトで OS 設定から先に設定し、ちらつきを防ぐ
-- 起動データ取得後に `src/lib/theme.ts` の `applyTheme()` で `--theme` の値を適用する
-- タイトルバーは Rust 側の `WebviewWindow::set_theme()` で設定する (src-tauri/src/lib.rs)
+- ウィンドウは tauri.conf.json で `"create": false` にし、Rust の setup で `WebviewWindowBuilder::from_config` を使って組み立てる。これは `initialization_script` で `--theme` の値 (`window.__CLIPBOARD_PALETTE_THEME__`) をページへ注入するため
+- src/app.html のインラインスクリプトが、注入値 → OS 設定の順で `data-theme` を決める。初回描画より前に確定するのでちらつかない
+- 起動データ取得後に `src/lib/theme.ts` の `applyTheme()` を呼ぶ。`auto` のときは `matchMedia` を監視して OS 側の切り替えにも追従する
+- タイトルバーは `WebviewWindow::set_theme()` で設定する (macOS ではアプリ全体に効く)
 
 ### Tauri コマンド
 

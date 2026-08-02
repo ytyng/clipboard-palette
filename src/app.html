@@ -6,13 +6,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Clipboard Palette</title>
     <script>
-      // 白い画面のちらつきを防ぐため、描画前に OS のテーマを適用する。
-      // --theme 引数が指定されていれば、データ取得後に上書きされる。
-      document.documentElement.dataset.theme = window.matchMedia(
-        "(prefers-color-scheme: dark)"
-      ).matches
-        ? "dark"
-        : "light";
+      // 初回描画の前にテーマを確定させ、ちらつきを防ぐ。
+      // --theme の値は Tauri の initialization_script で注入される
+      // (src-tauri/src/lib.rs)。ブラウザで直接開いた場合は undefined になる。
+      const forcedTheme = window.__CLIPBOARD_PALETTE_THEME__;
+      const isDark =
+        forcedTheme === "dark" ||
+        (forcedTheme !== "light" &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.dataset.theme = isDark ? "dark" : "light";
     </script>
     %sveltekit.head%
   </head>

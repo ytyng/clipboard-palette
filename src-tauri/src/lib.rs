@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::io::{self, IsTerminal, Read};
 use std::sync::Mutex;
-use tauri::{Manager, State, Theme};
+use tauri::{Manager, State, Theme, WebviewWindowBuilder};
 use clap::{Parser, ValueEnum};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -236,6 +236,8 @@ pub fn run() {
     let args = Args::parse();
     // タイトルバーを含むウィンドウのテーマ (auto の場合は OS 追従)
     let window_theme = args.theme.window_theme();
+    // 事前描画スクリプトに渡すテーマ名
+    let theme_name = args.theme.as_str();
     // 起動時に標準入力を読み取る
     let initial_data = match read_stdin_data(&args) {
         Ok(data) => {
@@ -258,12 +260,29 @@ pub fn run() {
                 data: Mutex::new(initial_data),
             });
 
+            // ウィンドウは tauri.conf.json で create: false にしてあり、ここで組み立てる。
+            // 初回描画より前にテーマを確定させるため、initialization_script で
+            // --theme の値をページへ注入する (src/app.html がこれを読む)
+            let window_config = app
+                .config()
+                .app
+                .windows
+                .iter()
+                .find(|w| w.label == "main")
+                .cloned()
+                .ok_or("window config \"main\" not found")?;
+            let init_script = format!(
+                "window.__CLIPBOARD_PALETTE_THEME__ = {};",
+                serde_json::to_string(theme_name)?
+            );
+            let window = WebviewWindowBuilder::from_config(app.handle(), &window_config)?
+                .initialization_script(init_script)
+                .build()?;
+
             // ウィンドウ (タイトルバー) のテーマを適用
             if let Some(theme) = window_theme {
-                if let Some(window) = app.get_webview_window("main") {
-                    if let Err(e) = window.set_theme(Some(theme)) {
-                        eprintln!("Failed to set window theme: {}", e);
-                    }
+                if let Err(e) = window.set_theme(Some(theme)) {
+                    eprintln!("Failed to set window theme: {}", e);
                 }
             }
 

@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "create": false,
         "title": "clipboard-palette",
         "width": 400,
         "height": 600
