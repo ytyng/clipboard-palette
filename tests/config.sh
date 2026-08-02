@@ -1,32 +1,32 @@
 #!/usr/bin/env zsh
-# テストスクリプト共通の設定・起動処理
-# 各テストスクリプトから source して使う
+# Shared settings and launcher for the test scripts.
+# Source this from each test script.
 #
-# 環境変数で一時的に上書きできる:
+# The settings can be overridden per run with environment variables:
 #   THEME=dark ./tests/simple-text.sh
 #   RUN_MODE=release ./tests/json.sh
 
-# カラーテーマ: auto (OS の設定に従う) / light / dark
+# Color theme: auto (follow the OS setting) / light / dark
 : ${THEME:=auto}
 
-# 実行方法: dev (vite + cargo run) / release (ビルド済みバイナリ)
+# How to run the app: dev (vite + cargo run) / release (the built binary)
 : ${RUN_MODE:=dev}
 
-# 開発サーバーの URL (src-tauri/tauri.conf.json の build.devUrl と合わせる)
+# Dev server URL (keep in sync with build.devUrl in src-tauri/tauri.conf.json)
 : ${DEV_SERVER_URL:=http://localhost:1420}
 
-# 開発サーバーがこのアプリのものか判定するための文字列 (src/app.html の title)
+# Marker used to tell whether the dev server is this app (the title in src/app.html)
 : ${DEV_SERVER_MARKER:=Clipboard Palette}
 
-# このファイルの位置からプロジェクトルートを決定する
+# Resolve the project root from the location of this file
 PROJECT_ROOT=${${(%):-%x}:a:h:h}
 RELEASE_BINARY=$PROJECT_ROOT/src-tauri/target/release/clipboard-palette
 VITE_BIN=$PROJECT_ROOT/node_modules/.bin/vite
 
-# 開発サーバーの状態を出力する
-#   ours    : このアプリの開発サーバーが応答している
-#   foreign : 何かが応答しているが、このアプリのものではない
-#   down    : 応答が無い
+# Print the state of the dev server
+#   ours    : the dev server of this app is answering
+#   foreign : something is answering, but it is not this app
+#   down    : nothing is answering
 dev_server_state() {
   local body
   if ! body=$(curl -s --max-time 2 "$DEV_SERVER_URL" 2>/dev/null); then
@@ -34,13 +34,13 @@ dev_server_state() {
   elif [[ $body == *"$DEV_SERVER_MARKER"* ]]; then
     echo ours
   else
-    # vite は strictPort なので、別プロセスが居ると起動できない。
-    # 黙って別のページを読み込まないよう down とは区別する
+    # vite uses strictPort, so it cannot start while another process holds the
+    # port. Keep this distinct from down so we never load the wrong page silently
     echo foreign
   fi
 }
 
-# 自分が起動した開発サーバーを止める
+# Stop the dev server we started ourselves
 stop_dev_server() {
   if [[ -n $STARTED_VITE_PID ]]; then
     kill $STARTED_VITE_PID 2>/dev/null
@@ -48,17 +48,17 @@ stop_dev_server() {
   fi
 }
 
-# 中断された場合も vite を残さないようにする。
-# zsh では関数内で張った EXIT トラップが「関数の return 時」に発火してしまうため、
-# 必ずトップレベル (source された時点) で登録する。
-# 対話シェルに source された場合は、Ctrl-C でそのシェルごと終了してしまうので張らない
+# Make sure vite is not left behind when the script is interrupted.
+# In zsh an EXIT trap set inside a function fires when that function returns, so
+# it has to be registered at the top level (that is, when this file is sourced).
+# Skip it in an interactive shell, where Ctrl-C would then exit the shell itself
 if [[ ! -o interactive ]]; then
   trap 'stop_dev_server' EXIT
   trap 'stop_dev_server; exit 130' INT TERM
 fi
 
-# 開発サーバーが起動していなければ起動する
-# 起動した場合はその PID を STARTED_VITE_PID に入れる (既に起動済みなら空)
+# Start the dev server unless it is already running.
+# When we start it, its PID goes to STARTED_VITE_PID (empty if it was running)
 start_dev_server_if_needed() {
   STARTED_VITE_PID=""
   case $(dev_server_state) in
@@ -77,7 +77,8 @@ start_dev_server_if_needed() {
     return 1
   fi
   echo "開発サーバーを起動する: $DEV_SERVER_URL"
-  # exec で置き換えることで $! が vite 本体の PID になる (後で確実に止められる)
+  # exec replaces the subshell so that $! is the PID of vite itself,
+  # which lets us stop it reliably later
   (cd $PROJECT_ROOT && exec "$VITE_BIN" dev >/dev/null 2>&1) &
   STARTED_VITE_PID=$!
   local i
@@ -90,8 +91,8 @@ start_dev_server_if_needed() {
   return 1
 }
 
-# 標準入力を受け取りつつ clipboard-palette を起動する
-# 引数はそのままアプリに渡される (--multiline など)
+# Launch clipboard-palette with standard input attached.
+# Arguments are passed through to the app (--multiline and so on)
 run_clipboard_palette() {
   case $RUN_MODE in
     release)
@@ -103,9 +104,10 @@ run_clipboard_palette() {
       "$RELEASE_BINARY" --theme "$THEME" "$@"
       ;;
     dev)
-      # `npm run tauri dev` は標準入力をアプリまで渡さないため使わない。
-      # 開発サーバーを別途起動し、cargo run に直接パイプする
-      # (デバッグビルドは tauri.conf.json の build.devUrl を読みに行く)
+      # `npm run tauri dev` is not used because it does not forward piped
+      # standard input to the app. Start the dev server separately and pipe
+      # into cargo run instead (a debug build loads build.devUrl from
+      # tauri.conf.json)
       start_dev_server_if_needed || return 1
       cargo run --manifest-path "$PROJECT_ROOT/src-tauri/Cargo.toml" \
         -- --theme "$THEME" "$@"

@@ -23,7 +23,7 @@ impl ThemeArg {
         }
     }
 
-    /// ウィンドウ (タイトルバー) に適用するテーマ。Auto は None で OS 追従。
+    /// Theme applied to the window (and its title bar). Auto is None, i.e. follow the OS.
     fn window_theme(&self) -> Option<Theme> {
         match self {
             ThemeArg::Auto => None,
@@ -146,13 +146,13 @@ fn default_data_buffer() -> String {
 }
 
 fn read_stdin_data(args: &Args) -> Result<AppData, String> {
-    // TTY (ターミナル直接起動) ならstdinを読まずデフォルトデータを使用
-    // is_default_data はサンプルデータで代替したかを表す
+    // When stdin is a TTY (launched straight from a terminal) do not read it and
+    // use the sample data instead. is_default_data records that substitution
     let (buffer, is_default_data) = if io::stdin().is_terminal() {
         println!("stdin is a terminal, using default data");
         (default_data_buffer(), true)
     } else {
-        // パイプ経由の場合のみstdinを読み取る
+        // Only read stdin when it comes through a pipe
         let mut buf = String::new();
         io::stdin()
             .read_to_string(&mut buf)
@@ -166,16 +166,16 @@ fn read_stdin_data(args: &Args) -> Result<AppData, String> {
         (buf, empty)
     };
 
-    // モードと設定を決定
-    // 先に一致したものが優先される (multiline > split-empty-line > json)
+    // Decide the mode and its settings.
+    // The first match wins (multiline > split-empty-line > json)
     let (mode, split_empty_line_count) = if args.multiline {
         ("multiline", 1)
     } else if let Some(count_opt) = args.split_empty_line {
-        let count = count_opt.unwrap_or(1); // --split-empty-line または --split-empty-line=N
+        let count = count_opt.unwrap_or(1); // --split-empty-line or --split-empty-line=N
         ("split-empty-line", count)
     } else if args.json || is_default_data {
-        // サンプルデータは JSON 形式なので JSON モードで解析する。
-        // 入力内容による JSON の自動判定は行わない (--json の明示が必要)
+        // The sample data is JSON, so parse it in JSON mode.
+        // JSON is never auto-detected from the input (--json is required)
         ("json", 1)
     } else {
         ("normal", 1)
@@ -193,7 +193,7 @@ fn read_stdin_data(args: &Args) -> Result<AppData, String> {
                 .collect()
         }
         "split-empty-line" => {
-            // 指定された数の空行で分割
+            // Split at the given number of empty lines
             let delimiter = "\n".repeat(split_empty_line_count + 1);
             buffer
                 .split(&delimiter)
@@ -232,13 +232,13 @@ fn read_stdin_data(args: &Args) -> Result<AppData, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // --help 時に stdin をブロックしないよう、先に引数を解析
+    // Parse the arguments first so that --help does not block on stdin
     let args = Args::parse();
-    // タイトルバーを含むウィンドウのテーマ (auto の場合は OS 追従)
+    // Theme of the window including its title bar (auto follows the OS)
     let window_theme = args.theme.window_theme();
-    // 事前描画スクリプトに渡すテーマ名
+    // Theme name handed to the pre-paint script
     let theme_name = args.theme.as_str();
-    // 起動時に標準入力を読み取る
+    // Read standard input at startup
     let initial_data = match read_stdin_data(&args) {
         Ok(data) => {
             println!("Successfully read stdin data: {} items", data.items.len());
@@ -255,14 +255,14 @@ pub fn run() {
             #[cfg(desktop)]
             app.handle().plugin(tauri_plugin_cli::init())?;
 
-            // アプリケーションステートを設定
+            // Set up the application state
             app.manage(AppState {
                 data: Mutex::new(initial_data),
             });
 
-            // ウィンドウは tauri.conf.json で create: false にしてあり、ここで組み立てる。
-            // 初回描画より前にテーマを確定させるため、initialization_script で
-            // --theme の値をページへ注入する (src/app.html がこれを読む)
+            // The window is declared with create: false in tauri.conf.json and is built
+            // here instead, so that an initialization script can inject the --theme value
+            // into the page (src/app.html reads it) before the first paint
             let window_config = app
                 .config()
                 .app
@@ -279,7 +279,7 @@ pub fn run() {
                 .initialization_script(init_script)
                 .build()?;
 
-            // ウィンドウ (タイトルバー) のテーマを適用
+            // Apply the theme to the window (and its title bar)
             if let Some(theme) = window_theme {
                 if let Err(e) = window.set_theme(Some(theme)) {
                     eprintln!("Failed to set window theme: {}", e);

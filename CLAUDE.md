@@ -123,4 +123,4 @@ npm run tauri build
 - Tauri2, Svelte5, Tailwind4 の使い方は、Context7 MCP サーバーを参照
 - Rust コードは標準的な Rust スタイルに従う
 - 空行のみの行は作成しない
-- コメントは日本語で記述（ただし関西弁は使わない）
+- ソースコード内のコメントは英語で記述する

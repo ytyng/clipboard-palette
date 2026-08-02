@@ -21,7 +21,7 @@
     try {
       await navigator.clipboard.writeText(text);
       console.log("Text copied to clipboard:", text);
-      onCopy(); // 親コンポーネントに通知
+      onCopy(); // Notify the parent component
       isClicked = true;
       showSuccessOverlay = true;
       setTimeout(() => {
@@ -32,14 +32,14 @@
     }
   }
 
-  // 背景色を決定する関数
+  // Decide the background color
   function getBackgroundClass() {
     if (isActive) {
-      return "bg-emerald-100 dark:bg-emerald-900/30"; // 薄い緑（アクティブ）
+      return "bg-emerald-100 dark:bg-emerald-900/30"; // Light green (active)
     } else if (isClicked) {
-      return "bg-gray-200 dark:bg-gray-600"; // 薄いグレー（クリック済み）
+      return "bg-gray-200 dark:bg-gray-600"; // Light gray (already clicked)
     } else {
-      return "bg-white dark:bg-gray-800"; // デフォルト
+      return "bg-white dark:bg-gray-800"; // Default
     }
   }
 </script>

@@ -18,8 +18,8 @@ function stopWatchingSystemTheme() {
 }
 
 /**
- * テーマ設定を適用する。
- * auto の場合は OS の設定に追従し、その後の変更も反映する。
+ * Apply a theme setting.
+ * With auto, follow the OS setting and keep tracking later changes.
  */
 export function applyTheme(setting: ThemeSetting) {
   stopWatchingSystemTheme();

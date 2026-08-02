@@ -6,9 +6,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Clipboard Palette</title>
     <script>
-      // 初回描画の前にテーマを確定させ、ちらつきを防ぐ。
-      // --theme の値は Tauri の initialization_script で注入される
-      // (src-tauri/src/lib.rs)。ブラウザで直接開いた場合は undefined になる。
+      // Settle the theme before the first paint so the window does not flash.
+      // The --theme value is injected by a Tauri initialization script
+      // (src-tauri/src/lib.rs). It is undefined when opened in a browser.
       const forcedTheme = window.__CLIPBOARD_PALETTE_THEME__;
       const isDark =
         forcedTheme === "dark" ||
