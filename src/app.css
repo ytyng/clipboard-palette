@@ -1,1 +1,15 @@
 @import "tailwindcss";
+
+/* Switch the dark: variant over to html[data-theme="dark"].
+   data-theme is set at startup from the OS setting or the --theme argument. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+html[data-theme="dark"] {
+  background-color: #101828;
+  color-scheme: dark;
+}
+
+html[data-theme="light"] {
+  background-color: #f3f4f6;
+  color-scheme: light;
+}

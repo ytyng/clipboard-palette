@@ -1,6 +1,6 @@
 #!/usr/bin/env zsh
 
-cd $(dirname $0)/..
+source "${0:A:h}/config.sh"
 
 echo "This is section1 Line1
 This is section1 Line2
@@ -12,4 +12,4 @@ This is section2 Line1
 
 This is section2 Line2
 This is section2 Line3
-" | ./src-tauri/target/release/clipboard-palette --split-empty-line=2
+" | run_clipboard_palette --split-empty-line=2

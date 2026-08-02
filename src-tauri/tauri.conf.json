@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "create": false,
         "title": "clipboard-palette",
         "width": 400,
         "height": 600
@@ -39,6 +40,11 @@
           "name": "json",
           "short": "j",
           "description": "Parse input as JSON array with label and text fields"
+        },
+        {
+          "name": "theme",
+          "description": "Color theme: auto (follow OS), light, dark",
+          "takesValue": true
         }
       ]
     }

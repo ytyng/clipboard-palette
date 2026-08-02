@@ -1,5 +1,5 @@
 #!/usr/bin/env zsh
 
-cd $(dirname $0)/..
+source "${0:A:h}/config.sh"
 
-echo "Hello, World!" | ./src-tauri/target/release/clipboard-palette
+echo "Hello, World!" | run_clipboard_palette

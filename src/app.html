@@ -5,6 +5,17 @@
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Clipboard Palette</title>
+    <script>
+      // Settle the theme before the first paint so the window does not flash.
+      // The --theme value is injected by a Tauri initialization script
+      // (src-tauri/src/lib.rs). It is undefined when opened in a browser.
+      const forcedTheme = window.__CLIPBOARD_PALETTE_THEME__;
+      const isDark =
+        forcedTheme === "dark" ||
+        (forcedTheme !== "light" &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.dataset.theme = isDark ? "dark" : "light";
+    </script>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">
