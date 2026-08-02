@@ -130,6 +130,17 @@ JSON is never auto-detected, so `--json` is required. Without it, input that hap
 
 Exactly one mode applies. If several are given, the first match in this list wins: `--multiline`, `--split-empty-line`, `--json`.
 
+### Color Theme (--theme)
+
+```shell
+echo "Hello, World!" | clipboard-palette --theme=dark   # Force dark mode
+echo "Hello, World!" | clipboard-palette --theme=light  # Force light mode
+echo "Hello, World!" | clipboard-palette --theme=auto   # Follow the OS setting (default)
+```
+
+The theme applies to the window content and the title bar. This is independent
+of the modes above.
+
 ## Tests
 
 The project includes test scripts for verification:
@@ -144,4 +155,27 @@ The project includes test scripts for verification:
 # JSON format
 ./tests/json.sh
 ```
+
+Each script loads `tests/config.sh`, which holds the shared settings:
+
+| Setting    | Values                    | Default | Description                                                  |
+| ---------- | ------------------------- | ------- | ------------------------------------------------------------ |
+| `THEME`    | `auto` / `light` / `dark` | `auto`  | Color theme passed to the app as `--theme`                   |
+| `RUN_MODE` | `dev` / `release`         | `dev`   | Run the debug build via `cargo run`, or the built binary     |
+
+Edit `tests/config.sh` to change the defaults, or override per run:
+
+```shell
+THEME=dark ./tests/simple-text.sh
+RUN_MODE=release THEME=light ./tests/json.sh
+```
+
+`RUN_MODE=dev` starts the Vite dev server (unless one is already running on
+`http://localhost:1420`) and then runs the debug build with `cargo run`.
+If something other than this app answers on that port, the script stops with an
+error instead of loading the wrong page — Vite uses `strictPort`, so it could
+not start there anyway. `npm run tauri dev` is not used here because it does not
+forward piped standard input to the app.
+
+`RUN_MODE=release` requires `npm run tauri build` beforehand.
 

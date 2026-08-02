@@ -39,6 +39,11 @@
           "name": "json",
           "short": "j",
           "description": "Parse input as JSON array with label and text fields"
+        },
+        {
+          "name": "theme",
+          "description": "Color theme: auto (follow OS), light, dark",
+          "takesValue": true
         }
       ]
     }

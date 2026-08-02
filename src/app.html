@@ -5,6 +5,15 @@
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Clipboard Palette</title>
+    <script>
+      // 白い画面のちらつきを防ぐため、描画前に OS のテーマを適用する。
+      // --theme 引数が指定されていれば、データ取得後に上書きされる。
+      document.documentElement.dataset.theme = window.matchMedia(
+        "(prefers-color-scheme: dark)"
+      ).matches
+        ? "dark"
+        : "light";
+    </script>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">

@@ -1,8 +1,37 @@
 use serde::{Deserialize, Serialize};
 use std::io::{self, IsTerminal, Read};
 use std::sync::Mutex;
-use tauri::{Manager, State};
-use clap::Parser;
+use tauri::{Manager, State, Theme};
+use clap::{Parser, ValueEnum};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ThemeArg {
+    /// Follow the OS setting
+    Auto,
+    /// Always use the light theme
+    Light,
+    /// Always use the dark theme
+    Dark,
+}
+
+impl ThemeArg {
+    fn as_str(&self) -> &'static str {
+        match self {
+            ThemeArg::Auto => "auto",
+            ThemeArg::Light => "light",
+            ThemeArg::Dark => "dark",
+        }
+    }
+
+    /// ウィンドウ (タイトルバー) に適用するテーマ。Auto は None で OS 追従。
+    fn window_theme(&self) -> Option<Theme> {
+        match self {
+            ThemeArg::Auto => None,
+            ThemeArg::Light => Some(Theme::Light),
+            ThemeArg::Dark => Some(Theme::Dark),
+        }
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ClipboardItem {
@@ -15,6 +44,7 @@ pub struct AppData {
     pub items: Vec<ClipboardItem>,
     pub mode: String,
     pub is_default_data: bool,
+    pub theme: String,
 }
 
 pub struct AppState {
@@ -61,7 +91,12 @@ EXAMPLES:
   printf 'first\nsecond\n' | clipboard-palette --multiline
   printf 'a\n\n\nb\n' | clipboard-palette --split-empty-line=2
   echo '[{"label":"Greeting","text":"Hello"}]' | clipboard-palette --json
-  pbpaste | clipboard-palette -m"#)]
+  pbpaste | clipboard-palette -m
+  echo "Hello, World!" | clipboard-palette --theme=dark
+
+THEME:
+  The window content and the title bar follow the OS setting by default.
+  --theme=light or --theme=dark forces one of them instead."#)]
 #[command(after_help = "Run with --help for modes, JSON format and examples.")]
 struct Args {
     /// Show one button per line. Blank lines are dropped
@@ -75,6 +110,15 @@ struct Args {
     /// Split the input into sections at COUNT consecutive empty lines [default: 1]
     #[arg(short = 's', long = "split-empty-line", value_name = "COUNT")]
     split_empty_line: Option<Option<usize>>,
+
+    /// Force a color theme instead of following the OS setting
+    #[arg(
+        long = "theme",
+        value_enum,
+        default_value_t = ThemeArg::Auto,
+        value_name = "THEME"
+    )]
+    theme: ThemeArg,
 }
 
 #[tauri::command]
@@ -182,6 +226,7 @@ fn read_stdin_data(args: &Args) -> Result<AppData, String> {
         items,
         mode: mode.to_string(),
         is_default_data,
+        theme: args.theme.as_str().to_string(),
     })
 }
 
@@ -189,6 +234,8 @@ fn read_stdin_data(args: &Args) -> Result<AppData, String> {
 pub fn run() {
     // --help 時に stdin をブロックしないよう、先に引数を解析
     let args = Args::parse();
+    // タイトルバーを含むウィンドウのテーマ (auto の場合は OS 追従)
+    let window_theme = args.theme.window_theme();
     // 起動時に標準入力を読み取る
     let initial_data = match read_stdin_data(&args) {
         Ok(data) => {
@@ -202,7 +249,7 @@ pub fn run() {
     };
 
     tauri::Builder::default()
-        .setup(|app| {
+        .setup(move |app| {
             #[cfg(desktop)]
             app.handle().plugin(tauri_plugin_cli::init())?;
 
@@ -210,6 +257,15 @@ pub fn run() {
             app.manage(AppState {
                 data: Mutex::new(initial_data),
             });
+
+            // ウィンドウ (タイトルバー) のテーマを適用
+            if let Some(theme) = window_theme {
+                if let Some(window) = app.get_webview_window("main") {
+                    if let Err(e) = window.set_theme(Some(theme)) {
+                        eprintln!("Failed to set window theme: {}", e);
+                    }
+                }
+            }
 
             Ok(())
         })

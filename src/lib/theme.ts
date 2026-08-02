@@ -1,0 +1,36 @@
+export type ThemeSetting = "auto" | "light" | "dark";
+
+const darkMediaQuery = "(prefers-color-scheme: dark)";
+
+let mediaQueryList: MediaQueryList | null = null;
+let mediaQueryListener: ((event: MediaQueryListEvent) => void) | null = null;
+
+function setDocumentTheme(theme: "light" | "dark") {
+  document.documentElement.dataset.theme = theme;
+}
+
+function stopWatchingSystemTheme() {
+  if (mediaQueryList && mediaQueryListener) {
+    mediaQueryList.removeEventListener("change", mediaQueryListener);
+  }
+  mediaQueryList = null;
+  mediaQueryListener = null;
+}
+
+/**
+ * テーマ設定を適用する。
+ * auto の場合は OS の設定に追従し、その後の変更も反映する。
+ */
+export function applyTheme(setting: ThemeSetting) {
+  stopWatchingSystemTheme();
+
+  if (setting === "light" || setting === "dark") {
+    setDocumentTheme(setting);
+    return;
+  }
+
+  mediaQueryList = window.matchMedia(darkMediaQuery);
+  setDocumentTheme(mediaQueryList.matches ? "dark" : "light");
+  mediaQueryListener = (event) => setDocumentTheme(event.matches ? "dark" : "light");
+  mediaQueryList.addEventListener("change", mediaQueryListener);
+}
