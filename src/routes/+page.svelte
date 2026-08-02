@@ -3,7 +3,7 @@
   import { onMount } from "svelte";
   import Help from "./Help.svelte";
   import TextCard from "./TextCard.svelte";
-  import { applyTheme, type ThemeSetting } from "$lib/theme";
+  import { applyTheme, injectedTheme } from "$lib/theme";
 
   interface ClipboardItem {
     label: string;
@@ -14,7 +14,6 @@
     items: ClipboardItem[];
     mode: string;
     is_default_data: boolean;
-    theme: ThemeSetting;
   }
 
   let appData = $state<AppData | null>(null);
@@ -29,10 +28,11 @@
   onMount(async () => {
     try {
       appData = await invoke<AppData>("get_clipboard_data");
-      applyTheme(appData.theme ?? "auto");
-      loading = false;
     } catch (e) {
       error = String(e);
+    } finally {
+      // Runs even when loading failed, so auto keeps following the OS setting
+      applyTheme(injectedTheme());
       loading = false;
     }
   });

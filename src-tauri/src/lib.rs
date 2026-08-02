@@ -44,7 +44,6 @@ pub struct AppData {
     pub items: Vec<ClipboardItem>,
     pub mode: String,
     pub is_default_data: bool,
-    pub theme: String,
 }
 
 pub struct AppState {
@@ -226,7 +225,6 @@ fn read_stdin_data(args: &Args) -> Result<AppData, String> {
         items,
         mode: mode.to_string(),
         is_default_data,
-        theme: args.theme.as_str().to_string(),
     })
 }
 
@@ -275,16 +273,12 @@ pub fn run() {
                 "window.__CLIPBOARD_PALETTE_THEME__ = {};",
                 serde_json::to_string(theme_name)?
             );
-            let window = WebviewWindowBuilder::from_config(app.handle(), &window_config)?
+            // The theme goes on the builder rather than being applied afterwards, so
+            // the title bar never paints with the OS theme first. None follows the OS
+            WebviewWindowBuilder::from_config(app.handle(), &window_config)?
                 .initialization_script(init_script)
+                .theme(window_theme)
                 .build()?;
-
-            // Apply the theme to the window (and its title bar)
-            if let Some(theme) = window_theme {
-                if let Err(e) = window.set_theme(Some(theme)) {
-                    eprintln!("Failed to set window theme: {}", e);
-                }
-            }
 
             Ok(())
         })
