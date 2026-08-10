@@ -40,11 +40,14 @@ version 不一致では失敗しない (実測確認済み) ので、lock の ve
   すると、tauri-action が draft 状態の不一致でエラーになる。採番を自動化して
   「bump し忘れ」を構造的に消している。
 - **コマンド名は `release`**。`publish` は npm/pnpm 組み込みコマンドと衝突する。
-- **`tauriScript: npm exec -- tauri`** を明示する。省略すると tauri-action は
+- **`tauriScript: npx tauri`** を明示する。省略すると tauri-action は
   `npm run tauri build` を実行するため、`package.json` の `tauri` スクリプトに
   `APPLE_SIGNING_IDENTITY='...' tauri` のようなインライン代入を足した瞬間に、
   workflow から渡した env が黙って上書きされる (シェルのインライン代入は継承 env
   より強い)。CLI を直接叩けば Secret 側が唯一の正になる。
+  `npm exec -- tauri` と書いてはいけない — tauri-action の runner.ts は bin が
+  `npm` の場合に必ず `run` を先頭へ挿入するため `npm run exec -- tauri ...` に
+  化けて "Missing script: exec" で落ちる (v0.1.1 の初回リリースで実測)。
 - **`concurrency` は `cancel-in-progress: false` + `queue: max`**。1 dispatch =
   1 version なので、run がキャンセルされるとその version は永久に公開されない
   (bump コミットは main に載ったまま)。既定の `queue: single` は pending を 1 件

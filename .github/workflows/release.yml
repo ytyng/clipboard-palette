@@ -173,7 +173,10 @@ jobs:
           # package.json の "tauri" スクリプトを経由せず tauri CLI を直接叩く。
           # スクリプト側に `APPLE_SIGNING_IDENTITY='...' tauri` のようなインライン
           # 代入が入ると workflow から渡した env を上書きしてしまうため。
-          tauriScript: npm exec -- tauri
+          # `npm exec -- tauri` は使えない — tauri-action の runner.ts は bin が
+          # `npm` だと必ず `run` を先頭に挿入するため `npm run exec ...` になり、
+          # "Missing script: exec" で落ちる (v0.1.1 で実測)。`npx` なら挿入されない。
+          tauriScript: npx tauri
           tagName: v__VERSION__
           releaseName: clipboard-palette v__VERSION__
           releaseDraft: true
