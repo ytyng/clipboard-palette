@@ -1,7 +1,9 @@
-# リリース (GitHub Actions ビルド + 署名 + 公証)
+# リリース (GitHub Actions ビルド + 署名 + 公証 + Homebrew cask)
 
 macOS 向けの universal dmg を GitHub Actions でビルドし、Developer ID で署名 +
 Apple の公証 (notarization) + staple まで通して GitHub Release に公開する。
+公開後、Homebrew tap ([cyberneura/homebrew-tap](https://github.com/cyberneura/homebrew-tap))
+の `Casks/clipboard-palette.rb` を新バージョンへ自動更新する。
 
 ## 使い方
 
@@ -65,10 +67,17 @@ version 不一致では失敗しない (実測確認済み) ので、lock の ve
 - **ローカルは ad-hoc 署名のまま**。`tauri.conf.json` に `signingIdentity: "-"` を
   残しておくと、env の無いローカルビルドは ad-hoc、CI は `APPLE_SIGNING_IDENTITY`
   が config を上書きして Developer ID で署名する (tauri-cli の優先順位 env > config)。
+- **Homebrew cask は `homebrew` ジョブが直接生成・コミットする**。Cask は version と
+  sha256 を直書きするため、Release 公開のたびに更新しないと `brew install` が古い
+  バージョンを配り続ける。queryfolio と同じ tap (cyberneura/homebrew-tap)・同じ
+  `HOMEBREW_TAP_TOKEN` 名の PAT を使う。secret 欠落時は黙ってスキップせず失敗させる
+  (Release 自体は公開済みなので、このジョブの失敗が公開を妨げることはない)。
+  cask には `binary` stanza を入れてあり、`brew install` だけで実行ファイルが
+  Homebrew の bin にリンクされる (手動の `ln -s` は不要になる)。
 
 ## 必要な Repository Secrets
 
-`ytyng/clipboard-palette` に以下 6 つ (登録済み)。
+`ytyng/clipboard-palette` に以下 7 つ。
 
 | Secret | 内容 |
 | --- | --- |
@@ -78,9 +87,11 @@ version 不一致では失敗しない (実測確認済み) ので、lock の ve
 | `APPLE_ID` | Apple アカウントのメールアドレス |
 | `APPLE_PASSWORD` | App用パスワード (通常のパスワードは不可) |
 | `APPLE_TEAM_ID` | 10 桁の Team ID |
+| `HOMEBREW_TAP_TOKEN` | cyberneura/homebrew-tap に `contents: write` できる PAT (queryfolio と同じもの) |
 
-workflow は最初に 6 つが揃っているかを検査して、欠けていれば即失敗する。
+workflow は最初に APPLE_* の 6 つが揃っているかを検査して、欠けていれば即失敗する。
 これが無いと「署名も公証もされていない dmg」が成功扱いで公開されてしまう。
+`HOMEBREW_TAP_TOKEN` は homebrew ジョブの冒頭で検査する。
 
 ## 公開後の検証
 
@@ -94,6 +105,14 @@ spctl -a -vvv "$APP"                 # accepted / source=Notarized Developer ID
 xcrun stapler validate "$APP"        # The validate action worked!
 lipo -archs "$APP/Contents/MacOS/clipboard-palette"   # x86_64 arm64
 hdiutil detach -quiet /Volumes/clipboard-palette
+```
+
+Homebrew 側は cask の version / sha256 が新しい Release と一致しているかを確認する。
+
+```shell
+gh api repos/cyberneura/homebrew-tap/contents/Casks/clipboard-palette.rb -q .content | base64 -d
+brew install --cask cyberneura/tap/clipboard-palette
+clipboard-palette --help
 ```
 
 `source=Notarized Developer ID` と staple 成功が出れば、ユーザーがダウンロードして
