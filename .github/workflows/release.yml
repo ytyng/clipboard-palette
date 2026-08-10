@@ -198,3 +198,77 @@ jobs:
         run: |
           VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
           gh release edit "v${VERSION}" --draft=false --latest
+
+  # 公開後に Homebrew tap (cyberneura/homebrew-tap) の Cask を新バージョンへ更新する。
+  # queryfolio と同じ運用 (同じ tap、同じ HOMEBREW_TAP_TOKEN 名の PAT)。
+  # Cask は version と sha256 を直書きするので、この更新を怠ると `brew install` が
+  # 古いバージョンを配り続ける。secret 欠落時は黙ってスキップせず失敗させる
+  # (Release 自体は publish 済みなので、このジョブの失敗が公開を妨げることはない)。
+  homebrew:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Check Homebrew tap token
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$HOMEBREW_TAP_TOKEN" ]; then
+            echo "::error::Missing repository secret HOMEBREW_TAP_TOKEN (PAT with contents:write on cyberneura/homebrew-tap; same one queryfolio uses). The cask was NOT updated."
+            exit 1
+          fi
+
+      - name: Download released dmg
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          gh release download "v${VERSION}" --pattern '*_universal.dmg' --output clipboard-palette.dmg
+          echo "DMG_SHA256=$(sha256sum clipboard-palette.dmg | cut -d' ' -f1)" >> "$GITHUB_ENV"
+
+      - name: Update Homebrew cask
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          # binary stanza — this app is launched from a shell (reads stdin), so the
+          # cask links the executable into Homebrew's bin instead of asking users
+          # to symlink it manually.
+          cat > clipboard-palette.rb <<EOF
+          cask "clipboard-palette" do
+            version "${VERSION}"
+            sha256 "${DMG_SHA256}"
+
+            url "https://github.com/ytyng/clipboard-palette/releases/download/v#{version}/clipboard-palette_#{version}_universal.dmg"
+            name "Clipboard Palette"
+            desc "Show copy-to-clipboard buttons for text piped from standard input"
+            homepage "https://github.com/ytyng/clipboard-palette"
+
+            livecheck do
+              url :url
+              strategy :github_latest
+            end
+
+            app "clipboard-palette.app"
+            binary "#{appdir}/clipboard-palette.app/Contents/MacOS/clipboard-palette"
+
+            zap trash: [
+              "~/Library/Caches/com.ytyng.clipboard-palette",
+              "~/Library/Preferences/com.ytyng.clipboard-palette.plist",
+              "~/Library/Saved Application State/com.ytyng.clipboard-palette.savedState",
+              "~/Library/WebKit/com.ytyng.clipboard-palette",
+            ]
+          end
+          EOF
+          # gh api PUT requires the current blob sha when updating an existing file
+          # (not needed on first creation).
+          CURRENT_SHA=$(gh api repos/cyberneura/homebrew-tap/contents/Casks/clipboard-palette.rb -q .sha 2>/dev/null || true)
+          gh api -X PUT repos/cyberneura/homebrew-tap/contents/Casks/clipboard-palette.rb \
+            -f message="Update clipboard-palette cask to v${VERSION}" \
+            -f content="$(base64 -w0 clipboard-palette.rb)" \
+            ${CURRENT_SHA:+-f sha="$CURRENT_SHA"}

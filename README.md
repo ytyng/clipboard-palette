@@ -10,6 +10,17 @@ An application that displays buttons to copy text from standard input to the cli
 
 ## Download
 
+### Homebrew (macOS)
+
+```shell
+brew install --cask cyberneura/tap/clipboard-palette
+```
+
+The cask installs the app and links the `clipboard-palette` command onto your
+`PATH`, so no extra setup is needed.
+
+### Manual download
+
 Get the latest `clipboard-palette_<version>_universal.dmg` from the
 [Releases page](https://github.com/ytyng/clipboard-palette/releases).
 It is a universal binary (Intel + Apple Silicon), signed with a Developer ID
@@ -53,7 +64,8 @@ A local build is ad-hoc signed (`signingIdentity: "-"`), so it is not distributa
 ### Publish a Release
 
 Bumps the version, pushes it to `main`, and runs the GitHub Actions release
-workflow (build → Developer ID signing → notarization → GitHub Release).
+workflow (build → Developer ID signing → notarization → GitHub Release →
+Homebrew cask update).
 
 ```shell
 npm run release              # 0.1.0 -> 0.1.1 (patch, default)
