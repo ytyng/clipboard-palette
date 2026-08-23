@@ -36,7 +36,6 @@ pub fn log(message: &str) {
 /// unknown result is logged as such rather than as "none".
 pub fn report_instances() {
     log(&format!("pid={}", std::process::id()));
-    #[cfg(all(desktop, unix))]
     log(&other_instances_line());
 }
 
@@ -102,10 +101,16 @@ pub fn log_window_state<R: Runtime>(app: &AppHandle<R>, label: &str) {
         size
     ));
     // A minimized window is not on screen either, so it does not count as a
-    // good startup even though it is "visible" as far as the window flag goes
+    // good startup even though it is "visible" as far as the window flag goes.
+    // Anything short of a confirmed yes to both is reported as incomplete: a
+    // false "it started" is exactly what this log exists to stop
     match (&visible, &minimized) {
+        (Ok(true), Ok(false)) => log("startup ok: window is visible"),
         (Ok(true), Ok(true)) => log("startup incomplete: window is minimized"),
-        (Ok(true), _) => log("startup ok: window is visible"),
+        (Ok(true), Err(e)) => log(&format!(
+            "startup incomplete: window is visible but its minimized state is unknown: {}",
+            e
+        )),
         (Ok(false), _) => log("startup incomplete: window is not visible"),
         (Err(e), _) => log(&format!(
             "startup incomplete: window visibility is unknown: {}",
@@ -207,6 +212,14 @@ fn flag(result: &tauri::Result<bool>) -> &'static str {
         Ok(false) => "false",
         Err(_) => "unknown",
     }
+}
+
+/// Stand-in for the platforms the check is not implemented for. The line is
+/// always printed so that a caller never has to tell a missing line apart from
+/// a check that found nothing.
+#[cfg(not(all(desktop, unix)))]
+fn other_instances_line() -> String {
+    "other instances: unknown (the check is only implemented for unix desktops)".to_string()
 }
 
 /// Build the "other instances" line by asking `ps` for the running processes.

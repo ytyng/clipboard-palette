@@ -181,7 +181,7 @@ A successful run:
 | `window created: label=main` | The window object was built. It is not on screen yet |
 | `window state: ...` | Measured once the event loop is ready. `visible` is the window's visibility flag, so it says the window was put on screen, not that a compositor has drawn it |
 | `startup ok: window is visible` | **The window is on screen.** This is the line to check for |
-| `startup incomplete: ...` | The window was built but is not visible, or is minimized |
+| `startup incomplete: ...` | The window was built but is not visible, is minimized, or its state could not be read. Anything short of a confirmed yes lands here |
 | `startup failed: ...` | The window could not be built |
 | `exit: reason=panic message=...` | The app died before or during startup, for example because the GUI backend would not start |
 | `window close requested: label=main` | The user closed the window |

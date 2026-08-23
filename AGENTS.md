@@ -69,7 +69,9 @@ clipboard-palette/
 - ウィンドウはイベントループが `RunEvent::Ready` になった時点で可視性を測り、
   `startup ok: window is visible` / `startup incomplete: ...` のどちらかで結論を出す。
   呼び出し元はこの 1 行だけ見ればよい。最小化されている場合も `startup incomplete`
-  にする (可視フラグは立つが画面には出ていないため)
+  にする (可視フラグは立つが画面には出ていないため)。可視・最小化のどちらかが取得
+  できなかった場合も `startup incomplete` に倒す — 偽の「起動できた」を出さないための
+  ログなので、確認できていない状態を ok と報告してはいけない
 - 終了理由は `RunEvent` (`ExitRequested` / `Exit` / `WindowEvent`)、シグナル
   (`libc::signal` で SIGINT / SIGTERM / SIGHUP)、パニック (panic hook) の 3 経路で出す。
   SIGKILL は捕捉できないため、`exit:` 行が 1 つも無いまま終わった = 強制終了、と読む
