@@ -1,8 +1,13 @@
+mod lifecycle;
+
 use serde::{Deserialize, Serialize};
 use std::io::{self, IsTerminal, Read};
 use std::sync::Mutex;
-use tauri::{Manager, State, Theme, WebviewWindowBuilder};
+use tauri::{App, Manager, RunEvent, State, Theme, WebviewWindowBuilder};
 use clap::{Parser, ValueEnum};
+
+/// Label of the only window, as declared in tauri.conf.json
+const MAIN_WINDOW_LABEL: &str = "main";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum ThemeArg {
@@ -228,10 +233,49 @@ fn read_stdin_data(args: &Args) -> Result<AppData, String> {
     })
 }
 
+/// Build the main window.
+///
+/// The window is declared with create: false in tauri.conf.json and is built
+/// here instead, so that an initialization script can inject the --theme value
+/// into the page (src/app.html reads it) before the first paint
+fn build_main_window(
+    app: &App,
+    theme_name: &str,
+    window_theme: Option<Theme>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let window_config = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|w| w.label == MAIN_WINDOW_LABEL)
+        .cloned()
+        .ok_or("window config \"main\" not found")?;
+    let init_script = format!(
+        "window.__CLIPBOARD_PALETTE_THEME__ = {};",
+        serde_json::to_string(theme_name)?
+    );
+    // The theme goes on the builder rather than being applied afterwards, so
+    // the title bar never paints with the OS theme first. None follows the OS
+    WebviewWindowBuilder::from_config(app.handle(), &window_config)?
+        .initialization_script(init_script)
+        .theme(window_theme)
+        .build()?;
+    lifecycle::log_window_created(MAIN_WINDOW_LABEL);
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Parse the arguments first so that --help does not block on stdin
     let args = Args::parse();
+    // Install the failure reporting first, so that even a panic in the startup
+    // reporting below shows up on stdout
+    lifecycle::install_panic_logger();
+    lifecycle::install_signal_logger();
+    // Report the process id and any leftover instance before anything else, so
+    // the caller can see what was already running when this one started
+    lifecycle::report_instances();
     // Theme of the window including its title bar (auto follows the OS)
     let window_theme = args.theme.window_theme();
     // Theme name handed to the pre-paint script
@@ -248,7 +292,7 @@ pub fn run() {
         }
     };
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .setup(move |app| {
             #[cfg(desktop)]
             app.handle().plugin(tauri_plugin_cli::init())?;
@@ -258,31 +302,27 @@ pub fn run() {
                 data: Mutex::new(initial_data),
             });
 
-            // The window is declared with create: false in tauri.conf.json and is built
-            // here instead, so that an initialization script can inject the --theme value
-            // into the page (src/app.html reads it) before the first paint
-            let window_config = app
-                .config()
-                .app
-                .windows
-                .iter()
-                .find(|w| w.label == "main")
-                .cloned()
-                .ok_or("window config \"main\" not found")?;
-            let init_script = format!(
-                "window.__CLIPBOARD_PALETTE_THEME__ = {};",
-                serde_json::to_string(theme_name)?
-            );
-            // The theme goes on the builder rather than being applied afterwards, so
-            // the title bar never paints with the OS theme first. None follows the OS
-            WebviewWindowBuilder::from_config(app.handle(), &window_config)?
-                .initialization_script(init_script)
-                .theme(window_theme)
-                .build()?;
+            build_main_window(app, theme_name, window_theme).inspect_err(|e| {
+                // Log before propagating: the failure that follows only reaches
+                // stderr, and the caller decides the outcome from stdout
+                lifecycle::log_startup_failed(&e.to_string());
+            })?;
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![get_clipboard_data])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    // Run the event loop by hand rather than with Builder::run, so the window
+    // state and the exit reason can be logged
+    app.run(|app_handle, event| match event {
+        // The window is on screen by the time the event loop is ready, so this
+        // is the first point where visibility means anything
+        RunEvent::Ready => lifecycle::log_window_state(app_handle, MAIN_WINDOW_LABEL),
+        RunEvent::WindowEvent { label, event, .. } => lifecycle::log_window_event(&label, &event),
+        RunEvent::ExitRequested { code, .. } => lifecycle::log_exit_requested(code),
+        RunEvent::Exit => lifecycle::log_exit(),
+        _ => {}
+    });
 }

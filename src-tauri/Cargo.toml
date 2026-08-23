@@ -27,3 +27,8 @@ clap = { version = "4", features = ["derive"] }
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-cli = "2.4.0"
 
+# Used only to print an exit line when the process is stopped by a signal
+# (src/lifecycle.rs). Already in the tree as a transitive dependency
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
