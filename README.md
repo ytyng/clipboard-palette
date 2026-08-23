@@ -153,6 +153,53 @@ echo "Hello, World!" | clipboard-palette --theme=auto   # Follow the OS setting 
 The theme applies to the window content and the title bar. This is independent
 of the modes above.
 
+## Lifecycle Log
+
+The app is often launched by a script or an AI agent that only sees its output,
+so it reports whether the window actually came up. Every one of those lines goes
+to **standard output** and starts with `[lifecycle]`:
+
+```shell
+echo "Hello, World!" | clipboard-palette | grep '^\[lifecycle\]'
+```
+
+A successful run:
+
+```
+[lifecycle] pid=51234
+[lifecycle] other instances: none
+[lifecycle] window created: label=main
+[lifecycle] window state: label=main visible=true minimized=false focused=true position=560,320 size=400x600
+[lifecycle] startup ok: window is visible
+```
+
+| Line | Meaning |
+| ---- | ------- |
+| `pid=N` | Process id of this instance |
+| `other instances: none` / `pid=N ...` | Other processes whose program name is `clipboard-palette`. A leftover instance from an earlier run shows up here. The match is on the name, so an unrelated program of the same name is listed too |
+| `other instances: unknown (...)` | The check itself failed. Not the same as `none` |
+| `window created: label=main` | The window object was built. It is not on screen yet |
+| `window state: ...` | Measured once the event loop is ready. `visible` is the window's visibility flag, so it says the window was put on screen, not that a compositor has drawn it |
+| `startup ok: window is visible` | **The window is on screen.** This is the line to check for |
+| `startup incomplete: ...` | The window was built but is not visible, or is minimized |
+| `startup failed: ...` | The window could not be built |
+| `exit: reason=panic message=...` | The app died before or during startup, for example because the GUI backend would not start |
+| `window close requested: label=main` | The user closed the window |
+| `exit requested: code=...` / `exit: reason=normal` | The event loop ended on its own terms |
+| `exit: reason=signal signal=SIGTERM` | Stopped by SIGINT, SIGTERM or SIGHUP |
+
+A run that stops without any `exit:` line was killed without a chance to clean
+up (SIGKILL, or the machine going away). SIGKILL cannot be caught, so its
+absence is the only signal there is.
+
+Checking the outcome from a script:
+
+```shell
+if printf '%s' "$output" | grep -q '^\[lifecycle\] startup ok:'; then
+  echo "the palette is on screen"
+fi
+```
+
 ## Tests
 
 The project includes test scripts for verification:
