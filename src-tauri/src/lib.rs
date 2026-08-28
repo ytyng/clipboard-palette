@@ -222,9 +222,13 @@ fn build_items(
             })
             .collect(),
         "split-empty-line" => {
-            // Split at the given number of empty lines
+            // Split at the given number of empty lines.
+            // Normalize CRLF first: text that came from Windows separates its
+            // lines with "\r\n", so a run of empty lines holds a "\r" between
+            // the newlines and would never match the delimiter below
+            let normalized = buffer.replace("\r\n", "\n");
             let delimiter = "\n".repeat(split_empty_line_count + 1);
-            buffer
+            normalized
                 .split(&delimiter)
                 .filter(|section| !section.trim().is_empty())
                 .map(|section| ClipboardItem {
@@ -431,11 +435,17 @@ mod tests {
     }
 
     #[test]
-    fn split_empty_line_does_not_treat_crlf_or_spaces_as_a_separator() {
-        // The separator is a literal run of newlines, as the help text says.
-        // A line holding only spaces, and CRLF input, stay inside the section
+    fn split_empty_line_treats_crlf_blank_lines_as_a_separator() {
+        // Text pasted from Windows uses CRLF, and an empty line is an empty
+        // line whichever way it ends. The "\r" is dropped along the way
         let items = build_items("a\r\n\r\nb", "split-empty-line", 1).unwrap();
-        assert_eq!(items.len(), 1, "CRLF must not separate sections");
+        let texts: Vec<_> = items.iter().map(|i| i.text.as_str()).collect();
+        assert_eq!(texts, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn split_empty_line_does_not_treat_a_line_of_spaces_as_a_separator() {
+        // The help text says empty lines, and a line holding spaces is not one
         let items = build_items("a\n \nb", "split-empty-line", 1).unwrap();
         assert_eq!(items.len(), 1, "a line of spaces must not separate sections");
     }
