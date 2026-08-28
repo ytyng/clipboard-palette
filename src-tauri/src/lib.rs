@@ -170,9 +170,26 @@ fn read_stdin_data(args: &Args) -> Result<AppData, String> {
         (buf, empty)
     };
 
-    // Decide the mode and its settings.
-    // The first match wins (multiline > split-empty-line > json)
-    let (mode, split_empty_line_count) = if args.multiline {
+    let (mode, split_empty_line_count) = select_mode(args, is_default_data);
+    let items = build_items(&buffer, mode, split_empty_line_count)?;
+
+    println!("Processing mode: {}", mode);
+    println!("Created {} clipboard items", items.len());
+
+    Ok(AppData {
+        items,
+        mode: mode.to_string(),
+        is_default_data,
+    })
+}
+
+/// Decide the mode and its settings.
+///
+/// The first match wins (multiline > split-empty-line > json), which is what
+/// the help text promises. Kept apart from the stdin read so it can be tested
+/// without a pipe.
+fn select_mode(args: &Args, is_default_data: bool) -> (&'static str, usize) {
+    if args.multiline {
         ("multiline", 1)
     } else if let Some(count_opt) = args.split_empty_line {
         let count = count_opt.unwrap_or(1); // --split-empty-line or --split-empty-line=N
@@ -183,37 +200,41 @@ fn read_stdin_data(args: &Args) -> Result<AppData, String> {
         ("json", 1)
     } else {
         ("normal", 1)
-    };
+    }
+}
 
+/// Split the input into the buttons the window shows.
+///
+/// Pure: this is what turns the piped text into what the user clicks, so it is
+/// the part worth pinning down with tests.
+fn build_items(
+    buffer: &str,
+    mode: &str,
+    split_empty_line_count: usize,
+) -> Result<Vec<ClipboardItem>, String> {
     let items = match mode {
-        "multiline" => {
-            buffer
-                .lines()
-                .filter(|line| !line.trim().is_empty())
-                .map(|line| ClipboardItem {
-                    label: line.to_string(),
-                    text: line.to_string(),
-                })
-                .collect()
-        }
+        "multiline" => buffer
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| ClipboardItem {
+                label: line.to_string(),
+                text: line.to_string(),
+            })
+            .collect(),
         "split-empty-line" => {
             // Split at the given number of empty lines
             let delimiter = "\n".repeat(split_empty_line_count + 1);
             buffer
                 .split(&delimiter)
                 .filter(|section| !section.trim().is_empty())
-                .map(|section| {
-                    ClipboardItem {
-                        label: section.to_string(),
-                        text: section.to_string(),
-                    }
+                .map(|section| ClipboardItem {
+                    label: section.to_string(),
+                    text: section.to_string(),
                 })
                 .collect()
         }
-        "json" => {
-            serde_json::from_str::<Vec<ClipboardItem>>(&buffer)
-                .map_err(|e| format!("Failed to parse JSON: {}", e))?
-        }
+        "json" => serde_json::from_str::<Vec<ClipboardItem>>(buffer)
+            .map_err(|e| format!("Failed to parse JSON: {}", e))?,
         _ => {
             // normal mode
             vec![ClipboardItem {
@@ -222,15 +243,7 @@ fn read_stdin_data(args: &Args) -> Result<AppData, String> {
             }]
         }
     };
-
-    println!("Processing mode: {}", mode);
-    println!("Created {} clipboard items", items.len());
-
-    Ok(AppData {
-        items,
-        mode: mode.to_string(),
-        is_default_data,
-    })
+    Ok(items)
 }
 
 /// Build the main window.
@@ -325,4 +338,160 @@ pub fn run() {
         RunEvent::Exit => lifecycle::log_exit(),
         _ => {}
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{build_items, default_data_buffer, select_mode, Args, ThemeArg};
+    use clap::Parser;
+
+    /// Parse arguments the way the binary does, without the binary.
+    fn args_from(argv: &[&str]) -> Args {
+        let mut full = vec!["clipboard-palette"];
+        full.extend_from_slice(argv);
+        Args::parse_from(full)
+    }
+
+    #[test]
+    fn no_option_reads_the_input_as_one_item() {
+        let (mode, count) = select_mode(&args_from(&[]), false);
+        assert_eq!((mode, count), ("normal", 1));
+    }
+
+    #[test]
+    fn multiline_wins_over_the_other_modes() {
+        // The help text promises multiline > split-empty-line > json, so the
+        // order of the branches is part of the contract
+        let args = args_from(&["--multiline", "--split-empty-line=3", "--json"]);
+        assert_eq!(select_mode(&args, false).0, "multiline");
+    }
+
+    #[test]
+    fn split_empty_line_wins_over_json() {
+        let args = args_from(&["--split-empty-line", "--json"]);
+        assert_eq!(select_mode(&args, false), ("split-empty-line", 1));
+    }
+
+    #[test]
+    fn split_empty_line_takes_an_optional_count() {
+        assert_eq!(
+            select_mode(&args_from(&["--split-empty-line=2"]), false),
+            ("split-empty-line", 2)
+        );
+        assert_eq!(
+            select_mode(&args_from(&["-s", "0"]), false),
+            ("split-empty-line", 0)
+        );
+    }
+
+    #[test]
+    fn json_needs_its_flag() {
+        // JSON is never auto-detected, so the flag is the only way to ask for
+        // it with real input
+        assert_eq!(select_mode(&args_from(&["--json"]), false), ("json", 1));
+        assert_eq!(select_mode(&args_from(&["-j"]), false), ("json", 1));
+    }
+
+    #[test]
+    fn the_sample_data_is_read_as_json_without_the_flag() {
+        // JSON is never auto-detected from real input, but the sample data the
+        // app falls back to is JSON, so it has to be parsed as such
+        assert_eq!(select_mode(&args_from(&[]), true).0, "json");
+        assert_eq!(select_mode(&args_from(&[]), false).0, "normal");
+    }
+
+    #[test]
+    fn multiline_drops_blank_lines() {
+        let items = build_items("first\n\n  \nsecond\n", "multiline", 1).unwrap();
+        let labels: Vec<_> = items.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(labels, vec!["first", "second"]);
+        assert_eq!(items[0].text, "first");
+    }
+
+    #[test]
+    fn normal_mode_trims_the_whole_input() {
+        let items = build_items("  hello\nworld  \n", "normal", 1).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].text, "hello\nworld");
+    }
+
+    #[test]
+    fn split_empty_line_splits_on_the_requested_run_of_newlines() {
+        let items = build_items("a\n\n\nb\n", "split-empty-line", 2).unwrap();
+        let texts: Vec<_> = items.iter().map(|i| i.text.as_str()).collect();
+        assert_eq!(texts, vec!["a", "b\n"]);
+    }
+
+    #[test]
+    fn split_empty_line_keeps_shorter_runs_inside_a_section() {
+        // One blank line is not a separator when a count of 2 was asked for
+        let items = build_items("a\n\nb\n\n\nc", "split-empty-line", 2).unwrap();
+        let texts: Vec<_> = items.iter().map(|i| i.text.as_str()).collect();
+        assert_eq!(texts, vec!["a\n\nb", "c"]);
+    }
+
+    #[test]
+    fn split_empty_line_does_not_treat_crlf_or_spaces_as_a_separator() {
+        // The separator is a literal run of newlines, as the help text says.
+        // A line holding only spaces, and CRLF input, stay inside the section
+        let items = build_items("a\r\n\r\nb", "split-empty-line", 1).unwrap();
+        assert_eq!(items.len(), 1, "CRLF must not separate sections");
+        let items = build_items("a\n \nb", "split-empty-line", 1).unwrap();
+        assert_eq!(items.len(), 1, "a line of spaces must not separate sections");
+    }
+
+    #[test]
+    fn split_empty_line_with_zero_splits_every_line() {
+        let items = build_items("a\nb\n\nc", "split-empty-line", 0).unwrap();
+        let texts: Vec<_> = items.iter().map(|i| i.text.as_str()).collect();
+        assert_eq!(texts, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn json_mode_reads_label_and_text() {
+        let items =
+            build_items(r#"[{"label": "L", "text": "T"}]"#, "json", 1).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].label, "L");
+        assert_eq!(items[0].text, "T");
+    }
+
+    #[test]
+    fn json_mode_reports_malformed_input() {
+        // Reported rather than shown as a single button holding the raw JSON
+        let err = build_items("not json", "json", 1).unwrap_err();
+        assert!(err.starts_with("Failed to parse JSON"), "{}", err);
+    }
+
+    #[test]
+    fn the_sample_data_parses_in_json_mode() {
+        // The fallback shown on a TTY or on empty input has to survive the
+        // mode that select_mode picks for it
+        let buffer = default_data_buffer();
+        let items = build_items(&buffer, "json", 1).unwrap();
+        assert_eq!(items.len(), 2);
+    }
+
+    #[test]
+    fn theme_defaults_to_following_the_os() {
+        let args = args_from(&[]);
+        assert_eq!(args.theme.as_str(), "auto");
+        assert!(args.theme.window_theme().is_none());
+    }
+
+    #[test]
+    fn theme_can_be_forced() {
+        assert_eq!(args_from(&["--theme=dark"]).theme.as_str(), "dark");
+        assert_eq!(args_from(&["--theme", "light"]).theme.as_str(), "light");
+        assert!(matches!(
+            args_from(&["--theme=dark"]).theme,
+            ThemeArg::Dark
+        ));
+        assert!(args_from(&["--theme=dark"]).theme.window_theme().is_some());
+    }
+
+    #[test]
+    fn an_unknown_theme_is_rejected() {
+        assert!(Args::try_parse_from(["clipboard-palette", "--theme=neon"]).is_err());
+    }
 }

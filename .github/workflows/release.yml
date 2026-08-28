@@ -1,13 +1,24 @@
 name: Release
 
-# 手動実行 (workflow_dispatch) のみ。push では自動ビルドしない。
+# リリースは手動実行 (workflow_dispatch) のみ。push では自動ビルドしない。
 # ローカルからは `npm run release -- [patch|minor|major]` で起動する (scripts/release.sh)。
+# PR では test ジョブだけが走る (build 以降は if で止めてある)。門番のテストを
+# マージ前に同じ定義で回すためで、リリース経路とテストの内容がずれない。
 on:
   workflow_dispatch:
+  pull_request:
 
-# GitHub Release の作成とアセットアップロードに contents: write が必要。
-permissions:
-  contents: write
+# 既定は権限なし。必要な job にだけ与える。特に test は PR が持ち込んだコードを
+# 実行するので contents: read までしか渡さない (同一リポジトリからの PR では
+# GITHUB_TOKEN が write を持ちうるため、ここを既定に任せない)。
+#
+# この workflow は pull_request でも起動するが、「PR で workflow 自体を書き換えれば
+# contents: write のジョブを動かせる」ことにはならない。public リポジトリの fork から
+# の pull_request では、permissions の記述に関わらず GITHUB_TOKEN が read-only に
+# 切り下げられ secrets も渡らない (write token を渡す設定があるのは private リポジトリ
+# 側の話で、ここには無い)。同一リポジトリのブランチから PR を出せるのは既に write
+# 権限を持つ相手だけなので、そちらも権限の昇格にはならない。
+permissions: {}
 
 # 同時に走らないよう直列化する。1 回の dispatch が 1 つの version に対応するため、
 # キャンセルされた run の version は (bump コミットは main に載ったまま) 永久に
@@ -17,13 +28,75 @@ permissions:
 #     「pending は 1 件だけ。新しく queue されたら既存の pending をキャンセルして
 #     置き換える」なので、3 回連続で dispatch すると真ん中の version が消える。
 # (queue: max と cancel-in-progress: true の併用は validation error になる)
+#
+# PR の検査 run は「1 dispatch = 1 version」の直列化とは無関係なので、リリース用の
+# グループへ入れない。同じグループにすると PR が 1 本走るだけでリリースが pending に
+# 積まれる (cancel-in-progress: false なので待たされ続ける)。さらに commit ごとに
+# 別グループにして、PR 側では直列化そのものを効かせない — ここで PR をまとめると
+# 同じ PR へ連続 push した時に古い commit の検査が順番待ちを作り、最新 commit の
+# 結果が最も遅れる (この設定では cancel-in-progress を PR だけ true にはできない)。
 concurrency:
-  group: ${{ github.workflow }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('{0}-{1}', github.ref, github.sha) || 'release' }}
   cancel-in-progress: false
   queue: max
 
 jobs:
+  # リリースビルドの門番。方針: cyberneura/cyberneura-github-actions の
+  # docs/build-requires-tests.md
+  #
+  # runs-on を build と同じ macOS にしてあるのは方針のルール 4 による。lifecycle.rs の
+  # シグナルハンドラや ps の出力形式は OS で変わるうえ、配布物は macOS でしか作らない。
+  test:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # ビルド用ではないので universal の 2 アーキは要らない。ホストターゲットでテストする。
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master
+        with:
+          toolchain: stable
+
+      - name: Cache Rust (cargo + target)
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install dependencies
+        run: npm ci
+
+      # cargo test でも build.rs は走る。tauri-build は frontendDist (../build) が
+      # 実在しないとアプリのコードへ到達する前に落ちるので、先にフロントを作る。
+      - name: Build frontend
+        run: npm run build
+
+      - name: Type-check frontend
+        run: npm run check
+
+      - name: Run Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
   build:
+    # test を通らずにビルドしない。needs は同じ run の job にしか効かないので、
+    # テストを別 workflow に切り出さないこと。
+    needs: test
+    # PR では成果物を作らない (Apple の証明書を PR のコードに触らせないためでもある)。
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -189,6 +262,8 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -211,6 +286,10 @@ jobs:
     needs: publish
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # 更新先は cyberneura/homebrew-tap で、書き込みは HOMEBREW_TAP_TOKEN (PAT) が行う。
+    # このリポジトリの GITHUB_TOKEN には読み取りだけあればよい (release の dmg 取得)。
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
