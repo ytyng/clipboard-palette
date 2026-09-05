@@ -15,7 +15,10 @@ Install: `brew install --cask ytyng/tap/clipboard-palette` (links the
 ## Use the JSON mode
 
 Collect what the user has to run or paste themselves, then write a JSON array
-of `{"label", "text"}` objects to a file and pipe it in:
+of `{"label", "text"}` objects to a temporary file outside the repository
+(`mktemp`, or the agent's scratch directory) and pipe it in. Delete the file
+once the window has closed: the palette often carries commands, tokens and
+queries that must not end up indexed, backed up or committed.
 
 ```json
 [
@@ -25,7 +28,7 @@ of `{"label", "text"}` objects to a file and pipe it in:
 ```
 
 ```sh
-clipboard-palette --json < palette.json &
+clipboard-palette --json < "$TMPDIR/palette.json" > "$TMPDIR/palette.log" 2>&1 &
 ```
 
 - `label` is what the button shows: say what the item does, not the command.
@@ -36,8 +39,13 @@ clipboard-palette --json < palette.json &
   are full of quotes, backslashes and `$`.
 - Run it in the background (`&` or the tool's background option). In the
   foreground the call blocks until the user closes the window.
-- Tell the user the palette is open and what each button is; the window is
-  easy to miss.
+- Before telling the user anything, read the log for the app's own verdict:
+  `[lifecycle] startup ok: window is visible` means the palette is on screen.
+  `startup incomplete` / `startup failed` / `exit:` lines, or no `startup`
+  line within a few seconds, mean it is not; report that instead of
+  announcing the palette.
+- Then tell the user the palette is open and what each button is; the window
+  is easy to miss.
 
 `--json` is required; JSON is never auto-detected. Both fields are required in
 every object, or the app refuses the input.
@@ -50,8 +58,6 @@ button). Only the first of `-m`, `-s`, `-j` applies if several are given.
 
 - Input must come through a pipe or redirect. With stdin on a terminal, or empty
   input, the app shows sample data instead.
-- The app prints `[lifecycle]` lines to stdout; `startup ok: window is visible`
-  means the window is on screen, anything else means it is not.
 - Secrets in the palette are shown in plain text on screen; say so when handing
   one over.
 - Closing the window ends the process. To change the palette, launch it again.
