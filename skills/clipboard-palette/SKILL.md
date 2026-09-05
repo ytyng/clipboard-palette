@@ -30,7 +30,8 @@ not end up indexed, backed up or committed.
 
 ```sh
 clipboard-palette --json < "$TMPDIR/palette.json" > "$TMPDIR/palette.log" 2>&1 &
-sleep 3; cat "$TMPDIR/palette.log"; rm -f "$TMPDIR/palette.json"
+for _ in $(seq 1 30); do grep -q '\[lifecycle\] \(startup\|exit\)' "$TMPDIR/palette.log" && break; sleep 0.5; done
+cat "$TMPDIR/palette.log"; rm -f "$TMPDIR/palette.json"
 ```
 
 - `label` is what the button shows: say what the item does, not the command.
@@ -48,9 +49,10 @@ sleep 3; cat "$TMPDIR/palette.log"; rm -f "$TMPDIR/palette.json"
   default data` (or `stdin is a terminal`) means the app fell back to its two
   sample buttons, and the success line that follows it is about those.
   `[lifecycle] startup ok: window is visible` means the palette is on screen;
-  `startup incomplete` / `startup failed` / `exit:` lines, or no `startup`
-  line within a few seconds, mean it is not. Announce the palette only when
-  both are good; otherwise report what the log says.
+  `startup incomplete` / `startup failed` / `exit:` lines mean it is not, and
+  no verdict after the 15-second poll above is a timeout to report as such.
+  Announce the palette only when both are good; otherwise report what the log
+  says.
 - Then tell the user the palette is open and what each button is; the window
   is easy to miss.
 
