@@ -29,9 +29,11 @@ not end up indexed, backed up or committed.
 ```
 
 ```sh
-clipboard-palette --json < "$TMPDIR/palette.json" > "$TMPDIR/palette.log" 2>&1 &
-for _ in $(seq 1 30); do grep -q '\[lifecycle\] \(startup\|exit\)' "$TMPDIR/palette.log" && break; sleep 0.5; done
-cat "$TMPDIR/palette.log"; rm -f "$TMPDIR/palette.json"
+PALETTE=$(mktemp -t palette).json; LOG="$PALETTE.log"   # unique per launch
+# ... write the JSON to "$PALETTE" with a file-writing tool ...
+clipboard-palette --json < "$PALETTE" > "$LOG" 2>&1 &
+for _ in $(seq 1 30); do grep -q '\[lifecycle\] \(startup\|exit\)' "$LOG" && break; sleep 0.5; done
+cat "$LOG"; rm -f "$PALETTE"
 ```
 
 - `label` is what the button shows: say what the item does, not the command.
