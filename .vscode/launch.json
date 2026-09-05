@@ -6,8 +6,8 @@
       "type": "node",
       "request": "launch",
       "cwd": "${workspaceFolder}",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "tauri", "dev"],
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["tauri", "dev"],
       "console": "integratedTerminal",
       "env": {
         "NODE_ENV": "development"
@@ -19,8 +19,8 @@
       "type": "node",
       "request": "launch",
       "cwd": "${workspaceFolder}",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev"],
       "console": "integratedTerminal",
       "env": {
         "NODE_ENV": "development"

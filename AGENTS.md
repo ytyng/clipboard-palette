@@ -116,13 +116,13 @@ libc = "0.2"   # シグナル受信時の終了ログのみに使う (lifecycle.
 ### 開発モード
 
 ```bash
-npm run tauri dev
+pnpm tauri dev
 ```
 
 ### リリースビルド  
 
 ```bash
-npm run tauri build
+pnpm tauri build
 ```
 
 ### テスト
@@ -143,9 +143,9 @@ npm run tauri build
 
 `RUN_MODE=dev` では vite (`node_modules/.bin/vite dev`) を先に起動してから `cargo run` する。
 1420 が別のサーバーに使われている場合はエラーで止まる (vite は strictPort のため)。
-`npm run tauri dev` はパイプした標準入力をアプリまで渡さないため使わない。
-なお `npm run tauri dev` にアプリ用の引数を渡す場合は `--` が3つ必要
-(`npm run tauri dev -- -- -- --theme dark`。npm / tauri CLI / cargo が1つずつ消費する)。
+`pnpm tauri dev` はパイプした標準入力をアプリまで渡さないため使わない。
+なお `pnpm tauri dev` にアプリ用の引数を渡す場合は `--` が2つ必要
+(`pnpm tauri dev -- -- --theme dark`。tauri CLI / cargo が1つずつ消費する)。
 
 ## コーディングルール
 

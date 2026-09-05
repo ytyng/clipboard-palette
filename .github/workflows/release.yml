@@ -3,7 +3,7 @@ name: Release
 # Releases follow the version in src-tauri/tauri.conf.json: change it on main and
 # the release happens. A push whose version is already released does nothing
 # (while an unreleased version sits on main, a push of a fix releases that
-# version). `npm run release -- [patch|minor|major]` (scripts/release.sh) bumps
+# version). `pnpm release [patch|minor|major]` (scripts/release.sh) bumps
 # it and pushes.
 #
 # What decides whether to release is not the diff -- squash, rebase and a direct
@@ -155,11 +155,16 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10
+
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
 
       # Not a build, so the two universal targets are not needed; the host target
       # is tested.
@@ -174,16 +179,16 @@ jobs:
           workspaces: src-tauri -> target
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       # build.rs runs under cargo test too, and tauri-build fails before it reaches
       # the app's code unless frontendDist (../build) exists, so the front end is
       # built first.
       - name: Build frontend
-        run: npm run build
+        run: pnpm build
 
       - name: Type-check frontend
-        run: npm run check
+        run: pnpm check
 
       - name: Run Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
@@ -214,7 +219,7 @@ jobs:
 
     steps:
       # persist-credentials: false keeps the write-capable GITHUB_TOKEN out of
-      # .git/config, where a later step (npm ci's install scripts, a third-party
+      # .git/config, where a later step (pnpm install's install scripts, a third-party
       # action) could pick it up.
       # Every `uses:` is pinned to a commit SHA because this job handles the Apple
       # certificate: pinning tauri-action alone would not do, since a compromised
@@ -225,11 +230,16 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10
+
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
 
       # Pin a SHA from master, not from a generated branch like `stable` or
       # `1.89.0`: those commits are collected once the branch moves on, and the
@@ -248,10 +258,10 @@ jobs:
           workspaces: src-tauri -> target
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       # The front end is built in this step, which holds no secrets. Letting
-      # `tauri build` run beforeBuildCommand (npm run build) would run vite and
+      # `tauri build` run beforeBuildCommand (pnpm build) would run vite and
       # its dependency tree in an environment carrying APPLE_PASSWORD and
       # GITHUB_TOKEN (child processes inherit the environment); a single
       # malicious dependency could take the Apple app-specific password and a
@@ -261,7 +271,7 @@ jobs:
       # tauri-action parses args with string-argv and strips the quotes, which
       # breaks the JSON. A file path without quotes is unaffected.
       - name: Build frontend (without secrets)
-        run: npm run build
+        run: pnpm build
 
       # With any one of the signing secrets missing, tauri-action would receive an
       # empty string and the build would still pass (ad-hoc signed, not notarized).
@@ -348,12 +358,9 @@ jobs:
           # Call the tauri CLI directly instead of going through the "tauri" script
           # in package.json: an inline assignment there such as
           # `APPLE_SIGNING_IDENTITY='...' tauri` would override the env passed in
-          # by the workflow.
-          # `npm exec -- tauri` cannot be used: tauri-action's runner.ts always
-          # inserts `run` after a bin named `npm`, producing `npm run exec ...`,
-          # which fails with "Missing script: exec" (observed on v0.1.1). `npx`
-          # gets no such insertion.
-          tauriScript: npx tauri
+          # by the workflow. Without this, tauri-action runs `pnpm tauri build`,
+          # which goes through that script.
+          tauriScript: pnpm exec tauri
           tagName: v__VERSION__
           releaseName: clipboard-palette v__VERSION__
           releaseDraft: true

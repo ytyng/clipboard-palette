@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 # Bump the version and push it to main, then watch the Release workflow that push
-# starts. Invoked by `npm run release -- [patch|minor|major]` (default: patch).
+# starts. Invoked by `pnpm release [patch|minor|major]` (default: patch).
 #
 # Flow:
 #   1. Verify the working tree is clean and HEAD == origin/main
 #   2. Compute the next version from tauri.conf.json
-#   3. Rewrite the version in tauri.conf.json / package.json / package-lock.json,
-#      commit, and push
+#   3. Rewrite the version in tauri.conf.json / package.json, commit, and push
 #   4. Find the run started by that push and watch it to completion
 #
 # Pushing is what releases (release.yml runs on push to main), not this script.
@@ -22,7 +21,7 @@ BUMP="${1:-patch}"
 case "${BUMP}" in
   patch | minor | major) ;;
   *)
-    echo "Usage: npm run release -- [patch|minor|major]  (default: patch)" >&2
+    echo "Usage: pnpm release [patch|minor|major]  (default: patch)" >&2
     exit 1
     ;;
 esac
@@ -79,22 +78,15 @@ VERSION=$(node -e '
 
 echo "Bumping version: ${CURRENT} -> ${VERSION} (${BUMP})"
 
-# Write the version into three files. Every rewrite is prepared first and only
-# then written, so a failure cannot leave some files updated and others not.
-#
-# package-lock.json is kept in step too, though npm ci does not require it (npm ci
-# ignores a top-level version mismatch; verified). It is done only so the lock
-# does not disagree with package.json. `npm install --package-lock-only` is not
-# used because it asks the registry and re-resolves the dependency tree, which
-# would mix unrelated changes into the release commit (what is built would no
-# longer be what was tested). Update dependencies with an explicit npm install,
-# separately from a release.
+# Write the version into both files. Every rewrite is prepared first and only
+# then written, so a failure cannot leave one file updated and the other not.
+# pnpm-lock.yaml does not carry the package's own version, so it is left alone.
 node -e '
   const fs = require("fs");
   const version = process.argv[1];
-  // tauri.conf.json / package.json: replace only the version string, without
-  // reserializing the file, so formatting survives and no other "version" key
-  // elsewhere in the file is touched.
+  // Replace only the version string, without reserializing the file, so
+  // formatting survives and no other "version" key elsewhere in the file is
+  // touched.
   const edits = ["src-tauri/tauri.conf.json", "package.json"].map((file) => {
     const text = fs.readFileSync(file, "utf8");
     const old = JSON.parse(text).version;
@@ -107,22 +99,10 @@ node -e '
     if (out === text) throw new Error("version not replaced in " + file);
     return { file, out };
   });
-  // package-lock.json carries the version in two places (root and packages[""])
-  // and the same string can appear under dependencies, so it is parsed and only
-  // those keys are rewritten. npm writes JSON.stringify(obj, null, 2) plus a
-  // newline, so reserializing changes just those two lines (verified byte for byte).
-  const lockFile = "package-lock.json";
-  const lock = JSON.parse(fs.readFileSync(lockFile, "utf8"));
-  if (!lock.packages || !lock.packages[""]) {
-    throw new Error("unexpected package-lock.json format (lockfileVersion 2+ required)");
-  }
-  lock.version = version;
-  lock.packages[""].version = version;
-  edits.push({ file: lockFile, out: JSON.stringify(lock, null, 2) + "\n" });
   for (const e of edits) fs.writeFileSync(e.file, e.out);
 ' "${VERSION}"
 
-git add src-tauri/tauri.conf.json package.json package-lock.json
+git add src-tauri/tauri.conf.json package.json
 git commit -m "chore: release v${VERSION}"
 if ! git push origin HEAD:main; then
   echo "Error: push failed. The local release commit remains." >&2
