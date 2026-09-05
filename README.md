@@ -204,6 +204,17 @@ if printf '%s' "$output" | grep -q '^\[lifecycle\] startup ok:'; then
 fi
 ```
 
+## Agent skill
+
+`skills/clipboard-palette/SKILL.md` teaches an AI agent (Claude Code, Codex,
+Cursor and others) to hand you commands and SQL as copy buttons through this
+app. Install it with [skills](https://github.com/vercel-labs/skills):
+
+```shell
+npx skills add ytyng/clipboard-palette        # this project
+npx skills add ytyng/clipboard-palette -g     # every project
+```
+
 ## Tests
 
 The project includes test scripts for verification:
