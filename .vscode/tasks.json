@@ -4,8 +4,8 @@
     {
       "label": "tauri dev",
       "type": "shell",
-      "command": "npm",
-      "args": ["run", "tauri", "dev"],
+      "command": "pnpm",
+      "args": ["tauri", "dev"],
       "group": {
         "kind": "build",
         "isDefault": true
@@ -26,8 +26,8 @@
     {
       "label": "tauri build",
       "type": "shell",
-      "command": "npm",
-      "args": ["run", "tauri", "build"],
+      "command": "pnpm",
+      "args": ["tauri", "build"],
       "group": "build",
       "presentation": {
         "echo": true,
@@ -42,8 +42,8 @@
     {
       "label": "frontend dev",
       "type": "shell",
-      "command": "npm",
-      "args": ["run", "dev"],
+      "command": "pnpm",
+      "args": ["dev"],
       "group": "build",
       "presentation": {
         "echo": true,
@@ -100,8 +100,8 @@
     {
       "label": "frontend build",
       "type": "shell",
-      "command": "npm",
-      "args": ["run", "build"],
+      "command": "pnpm",
+      "args": ["build"],
       "group": "build",
       "presentation": {
         "echo": true,

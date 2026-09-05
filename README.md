@@ -43,19 +43,19 @@ All the examples under [Usage](#usage) assume this link exists.
 ### Setup Development Environment
 
 ```shell
-npm install
+pnpm install
 ```
 
 ### Run in Development Mode
 
 ```shell
-npm run tauri dev
+pnpm tauri dev
 ```
 
 ### Release Build
 
 ```shell
-npm run tauri build
+pnpm tauri build
 ```
 
 The built executable will be created at `src-tauri/target/release/clipboard-palette`.
@@ -66,12 +66,12 @@ A local build is ad-hoc signed (`signingIdentity: "-"`), so it is not distributa
 Releases follow the version in `src-tauri/tauri.conf.json` on `main`: every push
 to `main` checks whether `v<version>` is already a published GitHub Release and,
 if not, builds one (Developer ID signing → notarization → GitHub Release).
-`npm run release` bumps the version, pushes it, and watches that run:
+`pnpm release` bumps the version, pushes it, and watches that run:
 
 ```shell
-npm run release              # 0.1.0 -> 0.1.1 (patch, default)
-npm run release -- minor     # 0.1.0 -> 0.2.0
-npm run release -- major     # 0.1.0 -> 1.0.0
+pnpm release           # 0.1.0 -> 0.1.1 (patch, default)
+pnpm release minor     # 0.1.0 -> 0.2.0
+pnpm release major     # 0.1.0 -> 1.0.0
 ```
 
 Requires a clean working tree on `main` that matches `origin/main`, and an
@@ -248,8 +248,8 @@ RUN_MODE=release THEME=light ./tests/json.sh
 `http://localhost:1420`) and then runs the debug build with `cargo run`.
 If something other than this app answers on that port, the script stops with an
 error instead of loading the wrong page — Vite uses `strictPort`, so it could
-not start there anyway. `npm run tauri dev` is not used here because it does not
+not start there anyway. `pnpm tauri dev` is not used here because it does not
 forward piped standard input to the app.
 
-`RUN_MODE=release` requires `npm run tauri build` beforehand.
+`RUN_MODE=release` requires `pnpm tauri build` beforehand.
 

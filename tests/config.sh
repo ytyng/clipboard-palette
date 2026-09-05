@@ -73,7 +73,7 @@ start_dev_server_if_needed() {
       ;;
   esac
   if [[ ! -x $VITE_BIN ]]; then
-    echo "vite が見つからない: $VITE_BIN ('npm install' を実行する)" >&2
+    echo "vite が見つからない: $VITE_BIN ('pnpm install' を実行する)" >&2
     return 1
   fi
   echo "開発サーバーを起動する: $DEV_SERVER_URL"
@@ -98,13 +98,13 @@ run_clipboard_palette() {
     release)
       if [[ ! -x $RELEASE_BINARY ]]; then
         echo "リリースバイナリが見つからない: $RELEASE_BINARY" >&2
-        echo "先に 'npm run tauri build' を実行するか、RUN_MODE=dev を指定する" >&2
+        echo "先に 'pnpm tauri build' を実行するか、RUN_MODE=dev を指定する" >&2
         return 1
       fi
       "$RELEASE_BINARY" --theme "$THEME" "$@"
       ;;
     dev)
-      # `npm run tauri dev` is not used because it does not forward piped
+      # `pnpm tauri dev` is not used because it does not forward piped
       # standard input to the app. Start the dev server separately and pipe
       # into cargo run instead (a debug build loads build.devUrl from
       # tauri.conf.json)
