@@ -16,9 +16,10 @@ Install: `brew install --cask ytyng/tap/clipboard-palette` (links the
 
 Collect what the user has to run or paste themselves, then write a JSON array
 of `{"label", "text"}` objects to a temporary file outside the repository
-(`mktemp`, or the agent's scratch directory) and pipe it in. Delete the file
-once the window has closed: the palette often carries commands, tokens and
-queries that must not end up indexed, backed up or committed.
+(`mktemp`, or the agent's scratch directory) and pipe it in. The app reads all
+of stdin at startup, so the file is deleted right after the log confirms the
+read (below); the palette often carries commands, tokens and queries that must
+not end up indexed, backed up or committed.
 
 ```json
 [
@@ -29,6 +30,7 @@ queries that must not end up indexed, backed up or committed.
 
 ```sh
 clipboard-palette --json < "$TMPDIR/palette.json" > "$TMPDIR/palette.log" 2>&1 &
+sleep 3; cat "$TMPDIR/palette.log"; rm -f "$TMPDIR/palette.json"
 ```
 
 - `label` is what the button shows: say what the item does, not the command.
@@ -40,8 +42,11 @@ clipboard-palette --json < "$TMPDIR/palette.json" > "$TMPDIR/palette.log" 2>&1 &
 - Run it in the background (`&` or the tool's background option). In the
   foreground the call blocks until the user closes the window.
 - Before telling the user anything, read the log for two lines. `Successfully
-  read stdin data: N items` means the input was accepted; `Error reading stdin
-  data: ...` (stderr) means it was rejected and the window shows only an error.
+  read stdin data: N items` with N equal to the number of objects written means
+  the input was accepted. `Error reading stdin data: ...` (stderr) means it was
+  rejected and the window shows only an error; `Empty input detected, using
+  default data` (or `stdin is a terminal`) means the app fell back to its two
+  sample buttons, and the success line that follows it is about those.
   `[lifecycle] startup ok: window is visible` means the palette is on screen;
   `startup incomplete` / `startup failed` / `exit:` lines, or no `startup`
   line within a few seconds, mean it is not. Announce the palette only when
