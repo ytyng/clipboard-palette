@@ -39,11 +39,13 @@ clipboard-palette --json < "$TMPDIR/palette.json" > "$TMPDIR/palette.log" 2>&1 &
   are full of quotes, backslashes and `$`.
 - Run it in the background (`&` or the tool's background option). In the
   foreground the call blocks until the user closes the window.
-- Before telling the user anything, read the log for the app's own verdict:
-  `[lifecycle] startup ok: window is visible` means the palette is on screen.
+- Before telling the user anything, read the log for two lines. `Successfully
+  read stdin data: N items` means the input was accepted; `Error reading stdin
+  data: ...` (stderr) means it was rejected and the window shows only an error.
+  `[lifecycle] startup ok: window is visible` means the palette is on screen;
   `startup incomplete` / `startup failed` / `exit:` lines, or no `startup`
-  line within a few seconds, mean it is not; report that instead of
-  announcing the palette.
+  line within a few seconds, mean it is not. Announce the palette only when
+  both are good; otherwise report what the log says.
 - Then tell the user the palette is open and what each button is; the window
   is easy to miss.
 
