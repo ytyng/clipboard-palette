@@ -1,12 +1,23 @@
 name: Release
 
-# リリースは手動実行 (workflow_dispatch) のみ。push では自動ビルドしない。
-# ローカルからは `npm run release -- [patch|minor|major]` で起動する (scripts/release.sh)。
-# PR では test ジョブだけが走る (build 以降は if で止めてある)。門番のテストを
-# マージ前に同じ定義で回すためで、リリース経路とテストの内容がずれない。
+# リリースは main の src-tauri/tauri.conf.json の version で決まる。version を変えて
+# main に載せればリリースされる。公開済みの version のままなら何度 push しても何も
+# 起きない (未公開の version が載っている間は、修正の push もその version のリリースになる)。
+# ローカルからは `npm run release -- [patch|minor|major]` (scripts/release.sh) で
+# 採番して push する。
+#
+# 実行可否を決めるのは diff ではなく「その version がリリース済みか」。squash / rebase /
+# 直 push で diff は変わるが結果は変わらない (冪等)。path フィルターを付けないのも
+# 同じ理由で、bump が想定外の形で入っても取りこぼさないため。
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
+  # PR では test ジョブだけが走る (plan 以降は if で止めてある)。門番のテストを
+  # マージ前に同じ定義で回すためで、リリース経路とテストの内容がずれない。
   pull_request:
+  # version は正しいのに、その時の run が (API の一時障害等で) 失敗した場合の再実行用。
+  # 同じ判定を通るので、公開済みの version をもう一度出すことはできない。
+  workflow_dispatch:
 
 # 既定は権限なし。必要な job にだけ与える。特に test は PR が持ち込んだコードを
 # 実行するので contents: read までしか渡さない (同一リポジトリからの PR では
@@ -15,21 +26,20 @@ on:
 # この workflow は pull_request でも起動するが、「PR で workflow 自体を書き換えれば
 # contents: write のジョブを動かせる」ことにはならない。public リポジトリの fork から
 # の pull_request では、permissions の記述に関わらず GITHUB_TOKEN が read-only に
-# 切り下げられ secrets も渡らない (write token を渡す設定があるのは private リポジトリ
-# 側の話で、ここには無い)。同一リポジトリのブランチから PR を出せるのは既に write
-# 権限を持つ相手だけなので、そちらも権限の昇格にはならない。
+# 切り下げられ secrets も渡らない。同一リポジトリのブランチから PR を出せるのは既に
+# write 権限を持つ相手だけなので、そちらも権限の昇格にはならない。
 permissions: {}
 
-# 同時に走らないよう直列化する。1 回の dispatch が 1 つの version に対応するため、
-# キャンセルされた run の version は (bump コミットは main に載ったまま) 永久に
-# 公開されない状態になる。それを防ぐために 2 つとも要る:
+# 同時に走らないよう直列化する。1 回の push が 1 つの version に対応するため、
+# キャンセルされた run の version は (bump コミットは main に載ったまま) 公開されない
+# 状態になる。それを防ぐために 2 つとも要る:
 #   cancel-in-progress: false — 走行中の run を後発でキャンセルしない。
 #   queue: max — pending も最大 100 件まで積む。既定の `queue: single` は
 #     「pending は 1 件だけ。新しく queue されたら既存の pending をキャンセルして
-#     置き換える」なので、3 回連続で dispatch すると真ん中の version が消える。
+#     置き換える」なので、3 回連続で push すると真ん中の version が消える。
 # (queue: max と cancel-in-progress: true の併用は validation error になる)
 #
-# PR の検査 run は「1 dispatch = 1 version」の直列化とは無関係なので、リリース用の
+# PR の検査 run は「1 push = 1 version」の直列化とは無関係なので、リリース用の
 # グループへ入れない。同じグループにすると PR が 1 本走るだけでリリースが pending に
 # 積まれる (cancel-in-progress: false なので待たされ続ける)。さらに commit ごとに
 # 別グループにして、PR 側では直列化そのものを効かせない — ここで PR をまとめると
@@ -41,12 +51,95 @@ concurrency:
   queue: max
 
 jobs:
+  # ビルドに時間をかける前に、その version がまだリリースされていないことだけを
+  # 確かめる。ここが false を返す限り、push のたびに macOS ランナーが動くことはない。
+  # PR ではリリース判定そのものが無意味なので走らせない。この job が skipped に
+  # なると、依存している build / publish も (always() を使っていないので) skipped に
+  # なる — PR では test だけが動く。
+  plan:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release: ${{ steps.decide.outputs.release }}
+    steps:
+      # dispatch は自分の ref を指定できる。未公開 version を載せたブランチが、
+      # そのブランチの内容でリリースされてしまわないようにする (push では main 以外
+      # 起こり得ないが、dispatch では起こる)。
+      - name: Refuse to release from anywhere but main
+        if: github.ref != 'refs/heads/main'
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          echo "::error::releases come from main, and this run is on ${REF}"
+          exit 1
+
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Read version
+        id: version
+        run: |
+          VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          if [ -z "$VERSION" ]; then
+            echo "::error::could not read the version out of src-tauri/tauri.conf.json"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Decide whether this version still needs releasing
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # このエンドポイントが答えるのは公開済みの Release だけ (draft にはまだ tag が
+          # 無いので見つからない)。それがここで訊きたいことでもある: 失敗した run が
+          # 残した draft は、同じ version で再実行して埋め直す。
+          #
+          # 404 だけを「未リリース」と読む。rate limit や障害をそう読むと、公開済みの
+          # version をもう一度ビルドして publish ジョブが二重に公開しにいく。
+          status=$(gh api "repos/${GH_REPO}/releases/tags/v${VERSION}" \
+            --silent --include 2>/dev/null | head -n 1 | awk '{print $2}' || true)
+          case "$status" in
+            404)
+              echo "release=true" >> "$GITHUB_OUTPUT"
+              echo "Releasing v${VERSION}"
+              ;;
+            200)
+              echo "release=false" >> "$GITHUB_OUTPUT"
+              echo "v${VERSION} is already released; nothing to do."
+              ;;
+            *)
+              echo "::error::could not tell whether v${VERSION} exists (HTTP ${status:-none}). Not guessing."
+              exit 1
+              ;;
+          esac
+
   # リリースビルドの門番。方針: cyberneura/cyberneura-github-actions の
   # docs/build-requires-tests.md
   #
   # runs-on を build と同じ macOS にしてあるのは方針のルール 4 による。lifecycle.rs の
   # シグナルハンドラや ps の出力形式は OS で変わるうえ、配布物は macOS でしか作らない。
   test:
+    # push / dispatch では、実際にリリースする version の時だけ走らせる。plan を
+    # 通さず無条件に走らせると、リリースを伴わない main への push のたびに
+    # macOS ランナーが動く — plan を置いた目的そのものが無くなる。
+    # PR では plan が skipped になり、既定ではこの job も道連れで skipped になる
+    # ので、!cancelled() で自動スキップを外してからイベント名で判定する
+    # (plan が失敗した時は needs.plan.result で止まる)。
+    needs: plan
+    if: >-
+      ${{ !cancelled()
+          && (github.event_name == 'pull_request'
+              || (needs.plan.result == 'success'
+                  && needs.plan.outputs.release == 'true')) }}
     runs-on: macos-latest
     timeout-minutes: 45
     permissions:
@@ -92,9 +185,8 @@ jobs:
   build:
     # test を通らずにビルドしない。needs は同じ run の job にしか効かないので、
     # テストを別 workflow に切り出さないこと。
-    needs: test
-    # PR では成果物を作らない (Apple の証明書を PR のコードに触らせないためでもある)。
-    if: github.event_name != 'pull_request'
+    needs: [plan, test]
+    if: needs.plan.outputs.release == 'true'
     permissions:
       contents: write
     strategy:
@@ -226,10 +318,8 @@ jobs:
       # tauri.conf.json の version から v<version> タグの Release を作成し、
       # ビルド成果物をアップロードする。将来 Windows 等を matrix に足した時に、
       # 片方だけで公開状態にならないよう draft で作成し、全 leg 成功後に
-      # publish ジョブで公開する。
-      # 注意: 公開済みバージョンと同じ version で再実行すると、tauri-action が
-      # draft 状態の不一致でエラーになる。必ず version を上げてから実行すること
-      # (scripts/release.sh が採番するので、通常は `npm run release` から起動する)。
+      # publish ジョブで公開する。失敗した run が残した draft は、同じ version の
+      # 再実行で tauri-action がそのまま使う (draft の tag_name で引き当てる)。
       # macOS の APPLE_* を渡すと tauri-action が Developer ID 署名 + 公証 + staple を
       # 自動で行う。Apple 認証情報を受け取るため、可変タグ @v0 ではなく commit SHA に
       # 固定する (タグが差し替えられて secrets を抜かれるサプライチェーン攻撃を防ぐ)。
@@ -258,99 +348,20 @@ jobs:
 
   # 全プラットフォームのビルド・アップロードが成功した時のみ draft を公開する。
   # どれかが失敗した場合は draft のまま残る (不完全な Release は公開されない)。
+  # Homebrew cask (ytyng/homebrew-tap) はここから更新しない。tap 側の workflow が
+  # 毎時、公開済みの最新 Release を見に来て cask を書き換える。
   publish:
-    needs: build
+    needs: [plan, build]
+    if: needs.plan.outputs.release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.plan.outputs.version }}
         run: |
-          VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
           gh release edit "v${VERSION}" --draft=false --latest
-
-  # 公開後に Homebrew tap (cyberneura/homebrew-tap) の Cask を新バージョンへ更新する。
-  # queryfolio と同じ運用 (同じ tap、同じ HOMEBREW_TAP_TOKEN 名の PAT)。
-  # Cask は version と sha256 を直書きするので、この更新を怠ると `brew install` が
-  # 古いバージョンを配り続ける。secret 欠落時は黙ってスキップせず失敗させる
-  # (Release 自体は publish 済みなので、このジョブの失敗が公開を妨げることはない)。
-  homebrew:
-    needs: publish
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    # 更新先は cyberneura/homebrew-tap で、書き込みは HOMEBREW_TAP_TOKEN (PAT) が行う。
-    # このリポジトリの GITHUB_TOKEN には読み取りだけあればよい (release の dmg 取得)。
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-
-      - name: Check Homebrew tap token
-        env:
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-        run: |
-          if [ -z "$HOMEBREW_TAP_TOKEN" ]; then
-            echo "::error::Missing repository secret HOMEBREW_TAP_TOKEN (PAT with contents:write on cyberneura/homebrew-tap; same one queryfolio uses). The cask was NOT updated."
-            exit 1
-          fi
-
-      - name: Download released dmg
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          gh release download "v${VERSION}" --pattern '*_universal.dmg' --output clipboard-palette.dmg
-          echo "DMG_SHA256=$(sha256sum clipboard-palette.dmg | cut -d' ' -f1)" >> "$GITHUB_ENV"
-
-      - name: Update Homebrew cask
-        env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-        run: |
-          # binary stanza — this app is launched from a shell (reads stdin), so the
-          # cask links the executable into Homebrew's bin instead of asking users
-          # to symlink it manually.
-          cat > clipboard-palette.rb <<EOF
-          cask "clipboard-palette" do
-            version "${VERSION}"
-            sha256 "${DMG_SHA256}"
-
-            url "https://github.com/ytyng/clipboard-palette/releases/download/v#{version}/clipboard-palette_#{version}_universal.dmg"
-            name "Clipboard Palette"
-            desc "Show copy-to-clipboard buttons for text piped from standard input"
-            homepage "https://github.com/ytyng/clipboard-palette"
-
-            livecheck do
-              url :url
-              strategy :github_latest
-            end
-
-            app "clipboard-palette.app"
-            binary "#{appdir}/clipboard-palette.app/Contents/MacOS/clipboard-palette"
-
-            zap trash: [
-              "~/Library/Caches/com.ytyng.clipboard-palette",
-              "~/Library/Preferences/com.ytyng.clipboard-palette.plist",
-              "~/Library/Saved Application State/com.ytyng.clipboard-palette.savedState",
-              "~/Library/WebKit/com.ytyng.clipboard-palette",
-            ]
-          end
-          EOF
-          # gh api PUT requires the current blob sha when updating an existing file
-          # (not needed on first creation).
-          CURRENT_SHA=$(gh api repos/cyberneura/homebrew-tap/contents/Casks/clipboard-palette.rb -q .sha 2>/dev/null || true)
-          gh api -X PUT repos/cyberneura/homebrew-tap/contents/Casks/clipboard-palette.rb \
-            -f message="Update clipboard-palette cask to v${VERSION}" \
-            -f content="$(base64 -w0 clipboard-palette.rb)" \
-            ${CURRENT_SHA:+-f sha="$CURRENT_SHA"}

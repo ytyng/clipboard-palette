@@ -13,7 +13,7 @@ An application that displays buttons to copy text from standard input to the cli
 ### Homebrew (macOS)
 
 ```shell
-brew install --cask cyberneura/tap/clipboard-palette
+brew install --cask ytyng/tap/clipboard-palette
 ```
 
 The cask installs the app and links the `clipboard-palette` command onto your
@@ -63,9 +63,10 @@ A local build is ad-hoc signed (`signingIdentity: "-"`), so it is not distributa
 
 ### Publish a Release
 
-Bumps the version, pushes it to `main`, and runs the GitHub Actions release
-workflow (build → Developer ID signing → notarization → GitHub Release →
-Homebrew cask update).
+Releases follow the version in `src-tauri/tauri.conf.json` on `main`: every push
+to `main` checks whether `v<version>` is already a published GitHub Release and,
+if not, builds one (Developer ID signing → notarization → GitHub Release).
+`npm run release` bumps the version, pushes it, and watches that run:
 
 ```shell
 npm run release              # 0.1.0 -> 0.1.1 (patch, default)
@@ -74,8 +75,11 @@ npm run release -- major     # 0.1.0 -> 1.0.0
 ```
 
 Requires a clean working tree on `main` that matches `origin/main`, and an
-authenticated `gh` CLI. See [documents/release.md](documents/release.md) for
-details and the required repository secrets.
+authenticated `gh` CLI. If the run fails, fix the cause and push; the version is
+still unreleased, so the next push picks it up. The Homebrew cask in
+[ytyng/homebrew-tap](https://github.com/ytyng/homebrew-tap) follows the latest
+release on its own (hourly). See [documents/release.md](documents/release.md)
+for details and the required repository secrets.
 
 ## Usage
 

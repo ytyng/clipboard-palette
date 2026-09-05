@@ -2,8 +2,9 @@
 
 macOS 向けの universal dmg を GitHub Actions でビルドし、Developer ID で署名 +
 Apple の公証 (notarization) + staple まで通して GitHub Release に公開する。
-公開後、Homebrew tap ([cyberneura/homebrew-tap](https://github.com/cyberneura/homebrew-tap))
-の `Casks/clipboard-palette.rb` を新バージョンへ自動更新する。
+Homebrew tap ([ytyng/homebrew-tap](https://github.com/ytyng/homebrew-tap)) の
+`Casks/clipboard-palette.rb` は tap 側の workflow が毎時、公開済みの最新 Release を
+見に来て書き換える。このリポジトリから tap へ push はしない。
 
 ## 使い方
 
@@ -19,7 +20,10 @@ npm run release -- major     # 0.1.0 -> 1.0.0
 2. `src-tauri/tauri.conf.json` の version を採番し、`package.json` /
    `package-lock.json` にも同じ version を反映
 3. `chore: release vX.Y.Z` を commit して `main` に push
-4. `gh workflow run release.yml` で workflow を起動し、完了まで watch
+4. その push で始まった run を (head SHA で) 見つけて完了まで watch
+
+リリースを始めるのは push であってスクリプトではない。`tauri.conf.json` の version を
+手で変えて push しても同じことが起きる。
 
 version の反映は 3 ファイルの該当フィールドを直接書き換える。
 `npm install --package-lock-only` は使わない — registry に問い合わせて依存ツリーを
@@ -28,17 +32,37 @@ version の反映は 3 ファイルの該当フィールドを直接書き換え
 version 不一致では失敗しない (実測確認済み) ので、lock の version を揃えているのは
 整合性のためだけ。
 
+## 中核: 「version が変わったか」ではなく「その version が公開済みか」で決める
+
+`release.yml` は `main` への push ごとに起動し、`plan` ジョブが
+`GET /repos/{repo}/releases/tags/v<version>` を叩く。
+
+- 404 → 未公開。`test` → `build` → `publish` が走る。
+- 200 → 公開済み。何もしない (version を変えない push は checkout と API 1 回で終わる)。
+- それ以外 (rate limit / 障害) → 判定不能として **失敗させる**。未公開と読むと、公開済みの
+  version をもう一度ビルドして publish しにいく。
+
+diff を見ないので、squash / rebase / 直 push のどれで着地しても結果は同じ (冪等)。
+`paths: [src-tauri/tauri.conf.json]` で絞らないのも同じ理由で、ビルドや workflow の
+不具合で失敗したリリースを「原因を直して push」で再試行できるようにするため
+(その修正は version を触らない)。**失敗しても version を上げ直さない**。
+
+`workflow_dispatch` は「version は正しいのに run が一時障害で落ちた」時の再実行用で、
+同じ判定を通るため公開済みの version をもう一度出すことはできない。`main` 以外の ref
+からの dispatch は plan の冒頭で拒否する (未公開 version を載せたブランチの内容で
+リリースされないように)。
+
 ## 構成上の判断 (なぜこうなっているか)
 
-- **トリガーは `workflow_dispatch` のみ**。push ごとにビルドしない (macOS runner
-  は消費が大きく、リリース以外でビルドする意味がない)。
 - **draft → publish の 2 段構え**。tauri-action は `v<version>` の Release を
   draft で作り、ビルドが全て成功した後に `publish` ジョブが
   `gh release edit --draft=false` で公開する。将来 Windows leg を matrix に
-  足した時、片方だけ成功した不完全な Release が公開されるのを防ぐ。
-- **version を毎回インクリメントする**。公開済みの version で workflow を再実行
-  すると、tauri-action が draft 状態の不一致でエラーになる。採番を自動化して
-  「bump し忘れ」を構造的に消している。
+  足した時、片方だけ成功した不完全な Release が公開されるのを防ぐ。失敗した run が
+  残した draft は、同じ version の再実行で tauri-action がそのまま使う。
+- **PR では test だけが走る**。`plan` が `pull_request` で skipped になり、`build` /
+  `publish` は道連れで skipped になる。`test` は `!cancelled()` で自動スキップを外し、
+  PR か「リリースする version」の時だけ走る (version を変えない main への push で
+  macOS ランナーを動かさない)。
 - **コマンド名は `release`**。`publish` は npm/pnpm 組み込みコマンドと衝突する。
 - **`tauriScript: npx tauri`** を明示する。省略すると tauri-action は
   `npm run tauri build` を実行するため、`package.json` の `tauri` スクリプトに
@@ -48,10 +72,11 @@ version 不一致では失敗しない (実測確認済み) ので、lock の ve
   `npm exec -- tauri` と書いてはいけない — tauri-action の runner.ts は bin が
   `npm` の場合に必ず `run` を先頭へ挿入するため `npm run exec -- tauri ...` に
   化けて "Missing script: exec" で落ちる (v0.1.1 の初回リリースで実測)。
-- **`concurrency` は `cancel-in-progress: false` + `queue: max`**。1 dispatch =
-  1 version なので、run がキャンセルされるとその version は永久に公開されない
+- **`concurrency` は `cancel-in-progress: false` + `queue: max`**。1 push =
+  1 version なので、run がキャンセルされるとその version の公開が遅れる
   (bump コミットは main に載ったまま)。既定の `queue: single` は pending を 1 件
-  しか保持せず新しい dispatch が既存の pending を潰すため、`queue: max` が要る。
+  しか保持せず新しい push が既存の pending を潰すため、`queue: max` が要る。
+  PR の run は commit ごとに別グループにして、リリースのキューに並ばせない。
 - **`uses:` は全て commit SHA 固定**。Apple の秘密鍵入り証明書を扱うジョブなので、
   タグが差し替えられると secrets を抜かれる。更新時は行末の `# v4` コメントを
   頼りに新しい SHA を調べる。`dtolnay/rust-toolchain` は **master 履歴**の SHA を
@@ -70,17 +95,15 @@ version 不一致では失敗しない (実測確認済み) ので、lock の ve
 - **ローカルは ad-hoc 署名のまま**。`tauri.conf.json` に `signingIdentity: "-"` を
   残しておくと、env の無いローカルビルドは ad-hoc、CI は `APPLE_SIGNING_IDENTITY`
   が config を上書きして Developer ID で署名する (tauri-cli の優先順位 env > config)。
-- **Homebrew cask は `homebrew` ジョブが直接生成・コミットする**。Cask は version と
-  sha256 を直書きするため、Release 公開のたびに更新しないと `brew install` が古い
-  バージョンを配り続ける。queryfolio と同じ tap (cyberneura/homebrew-tap)・同じ
-  `HOMEBREW_TAP_TOKEN` 名の PAT を使う。secret 欠落時は黙ってスキップせず失敗させる
-  (Release 自体は公開済みなので、このジョブの失敗が公開を妨げることはない)。
-  cask には `binary` stanza を入れてあり、`brew install` だけで実行ファイルが
+- **Homebrew cask は tap 側から更新する (プロジェクト側から push しない)**。
+  プロジェクトから tap へ push する形だと、tap に書ける token を全プロジェクトに
+  配ることになる。tap 側から聞きに行けば、Actions が自分のリポジトリに対して持つ
+  `GITHUB_TOKEN` だけで済み、新しい secret はゼロ。代償は次の毎時 run までの遅れだけ。cask には `binary` stanza が入っており、`brew install` だけで実行ファイルが
   Homebrew の bin にリンクされる (手動の `ln -s` は不要になる)。
 
 ## 必要な Repository Secrets
 
-`ytyng/clipboard-palette` に以下 7 つ。
+`ytyng/clipboard-palette` に以下 6 つ。
 
 | Secret | 内容 |
 | --- | --- |
@@ -90,11 +113,10 @@ version 不一致では失敗しない (実測確認済み) ので、lock の ve
 | `APPLE_ID` | Apple アカウントのメールアドレス |
 | `APPLE_PASSWORD` | App用パスワード (通常のパスワードは不可) |
 | `APPLE_TEAM_ID` | 10 桁の Team ID |
-| `HOMEBREW_TAP_TOKEN` | cyberneura/homebrew-tap に `contents: write` できる PAT (queryfolio と同じもの) |
 
 workflow は最初に APPLE_* の 6 つが揃っているかを検査して、欠けていれば即失敗する。
 これが無いと「署名も公証もされていない dmg」が成功扱いで公開されてしまう。
-`HOMEBREW_TAP_TOKEN` は homebrew ジョブの冒頭で検査する。
+tap 用の token (`HOMEBREW_TAP_TOKEN`) はもう使わない。
 
 ## 公開後の検証
 
@@ -110,11 +132,13 @@ lipo -archs "$APP/Contents/MacOS/clipboard-palette"   # x86_64 arm64
 hdiutil detach -quiet /Volumes/clipboard-palette
 ```
 
-Homebrew 側は cask の version / sha256 が新しい Release と一致しているかを確認する。
+Homebrew 側は (tap の次の毎時 run が成功した後に) cask の version / sha256 が新しい
+Release と一致しているかを確認する。待ちたくなければ tap の workflow を手で起動する。
 
 ```shell
-gh api repos/cyberneura/homebrew-tap/contents/Casks/clipboard-palette.rb -q .content | base64 -d
-brew install --cask cyberneura/tap/clipboard-palette
+gh workflow run update.yml -R ytyng/homebrew-tap
+gh api repos/ytyng/homebrew-tap/contents/Casks/clipboard-palette.rb -q .content | base64 -d
+brew install --cask ytyng/tap/clipboard-palette
 clipboard-palette --help
 ```
 
@@ -125,6 +149,8 @@ clipboard-palette --help
 
 ## 既知の弱点
 
+- **version 変更が紛れた PR をマージした瞬間に公開される**。version の変更は
+  `npm run release` (独立したコミット) で行い、機能 PR に混ぜないこと。
 - **Rust 側のビルドスクリプトには依然として secrets が見える**。フロントエンドの
   ビルドは分離したが、`tauri build` は署名・公証と一体で cargo のビルドを走らせる
   ため、`APPLE_PASSWORD` / `GITHUB_TOKEN` を持つ環境で Rust 依存クレートの
@@ -133,7 +159,8 @@ clipboard-palette --help
   workflow が大幅に複雑化する。cargo の依存は `Cargo.lock` で固定されているため、
   現状はこのリスクを受け入れている。
 - `npm run release` は `main` へ**直接 push** する。ブランチ保護 (PR 必須) を
-  掛けると破綻する。掛けるなら tag 駆動 (CI で version 注入) に切り替えること。
+  掛けると破綻する。掛けるなら version bump を PR で出す運用にする (workflow 側は
+  そのままで動く)。
 - Windows ビルドは含めていない。必要になったら `release.yml` の matrix に
   `windows-latest` / `--bundles nsis` の leg を足す (APPLE_* は
   `matrix.platform == 'macos-latest'` の条件式で既に macOS 限定になっている)。
