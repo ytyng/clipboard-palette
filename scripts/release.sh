@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# GitHub Actions の Release ワークフローを起動し、完了まで watch する。
-# `npm run release -- [patch|minor|major]` から呼ばれる (省略時は patch)。
+# Bump the version and push it to main, then watch the Release workflow that push
+# starts. Invoked by `npm run release -- [patch|minor|major]` (default: patch).
 #
-# 処理の流れ:
-#   1. 作業ツリーがクリーン かつ HEAD == origin/main であることを検証
-#   2. tauri.conf.json の version を bump 種別に応じて採番
-#   3. tauri.conf.json / package.json / package-lock.json の version を
-#      書き換えて commit & push
-#   4. workflow をトリガーして watch
+# Flow:
+#   1. Verify the working tree is clean and HEAD == origin/main
+#   2. Compute the next version from tauri.conf.json
+#   3. Rewrite the version in tauri.conf.json / package.json / package-lock.json,
+#      commit, and push
+#   4. Find the run started by that push and watch it to completion
 #
-# version を毎回インクリメントするのは、公開済みバージョンと同じ version で
-# workflow を再実行すると tauri-action が draft 状態の不一致でエラーになるため。
-# 採番を自動化することで「bump し忘れて落ちる」事故を構造的に無くす。
+# Pushing is what releases (release.yml runs on push to main), not this script.
+# If this script fails after the push the build still runs, and pushing the same
+# version again does nothing: the workflow sees it is released already.
 #
-# gh CLI (認証済み) が必要。
+# Requires an authenticated gh CLI.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -27,9 +27,9 @@ case "${BUMP}" in
     ;;
 esac
 
-# gh の存在と認証を、何かを書き換える前に確認する。push した後で gh が使えないと、
-# bump コミットだけが main に載って workflow が起動されず、次回実行が別 version を
-# 採番してしまう (公開されない version が main に取り残される)。
+# Check gh before anything is rewritten. The release itself starts on push, so a
+# missing gh would not stop the build; it would only leave this script unable to
+# watch it. Better to say so before pushing than to end without knowing.
 if ! command -v gh >/dev/null 2>&1; then
   echo "Error: gh CLI not found. Install it and run 'gh auth login'." >&2
   exit 1
@@ -39,8 +39,9 @@ if ! gh auth status >/dev/null 2>&1; then
   exit 1
 fi
 
-# 採番は main のクリーンな状態からのみ行う。ローカルの未コミット変更が紛れ込んだり、
-# origin/main とズレたままビルドするのを防ぐ (ビルドは origin/main の内容で走るため)。
+# Only number a release from a clean main. The build runs against origin/main, so
+# uncommitted changes or a tree that has drifted from origin would ship something
+# other than what was reviewed.
 if [ "$(git branch --show-current)" != "main" ]; then
   echo "Error: not on the 'main' branch. Switch to main first." >&2
   exit 1
@@ -49,17 +50,18 @@ if [ -n "$(git status --porcelain)" ]; then
   echo "Error: working tree is not clean. Commit or stash your changes first." >&2
   exit 1
 fi
-# refspec を明示して origin/main を確実に更新する。先頭の + は clone 既定の refspec と
-# 同じ強制更新で、force push 後も fetch 自体は成功させ、ズレは下の比較で検出する。
+# An explicit refspec so origin/main is updated regardless of the remote's fetch
+# config. The leading + is the same forced update a clone's default refspec has:
+# the fetch succeeds even after a force push, and the drift is caught below.
 git fetch origin +main:refs/remotes/origin/main
 if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
   echo "Error: local HEAD does not match origin/main. Push (or pull) first." >&2
   exit 1
 fi
 
-# 現行 version を読み、bump 種別に応じて次の version を計算する。厳密な X.Y.Z
-# だけを受け付ける (Number.isNaN(undefined) は false のため、"1.2" や "1.2.3.4"
-# のような不正な値を弾くには正規表現で全体を検証する必要がある)。
+# Read the current version and compute the next one. Only strict X.Y.Z is
+# accepted: the whole string is validated with a regex because
+# Number.isNaN(undefined) is false, so "1.2" or "1.2.3.4" would otherwise pass.
 CURRENT=$(node -p "require('./src-tauri/tauri.conf.json').version")
 VERSION=$(node -e '
   const cur = process.argv[1];
@@ -77,20 +79,22 @@ VERSION=$(node -e '
 
 echo "Bumping version: ${CURRENT} -> ${VERSION} (${BUMP})"
 
-# version を 3 ファイルに反映する。全ファイルを先に読んで書き換えに成功することを
-# 確認してから書き込む (一部だけ更新されて中途半端な状態で終わるのを避ける)。
+# Write the version into three files. Every rewrite is prepared first and only
+# then written, so a failure cannot leave some files updated and others not.
 #
-# package-lock.json も揃えるが、これは npm ci の要件ではない (npm ci はトップレベルの
-# version 不一致を無視する。実測で確認済み)。単に package.json と食い違ったままだと
-# 紛らわしいので揃えるだけ。`npm install --package-lock-only` を使わないのは、あれが
-# registry に問い合わせて依存ツリーを再解決するため、version 採番とは無関係な差分が
-# リリースコミットに混ざるから (「ビルドしたもの != テストしたもの」になり得る)。
-# 依存を更新したい時は、リリースとは別に明示的に npm install を実行すること。
+# package-lock.json is kept in step too, though npm ci does not require it (npm ci
+# ignores a top-level version mismatch; verified). It is done only so the lock
+# does not disagree with package.json. `npm install --package-lock-only` is not
+# used because it asks the registry and re-resolves the dependency tree, which
+# would mix unrelated changes into the release commit (what is built would no
+# longer be what was tested). Update dependencies with an explicit npm install,
+# separately from a release.
 node -e '
   const fs = require("fs");
   const version = process.argv[1];
-  // tauri.conf.json / package.json は該当の version 値だけを文字列置換する
-  // (ファイル全体を再整形せず、別位置の version キーの誤爆も防ぐ)。
+  // tauri.conf.json / package.json: replace only the version string, without
+  // reserializing the file, so formatting survives and no other "version" key
+  // elsewhere in the file is touched.
   const edits = ["src-tauri/tauri.conf.json", "package.json"].map((file) => {
     const text = fs.readFileSync(file, "utf8");
     const old = JSON.parse(text).version;
@@ -103,10 +107,10 @@ node -e '
     if (out === text) throw new Error("version not replaced in " + file);
     return { file, out };
   });
-  // package-lock.json は version が root と packages[""] の 2 箇所にあり、依存側にも
-  // 同じ文字列が現れうる。パースして該当キーだけを書き換える。npm が書き出す形式は
-  // JSON.stringify(obj, null, 2) + 改行と一致するので、再シリアライズしても差分は
-  // その 2 行だけになる (実測で byte 単位の一致を確認済み)。
+  // package-lock.json carries the version in two places (root and packages[""])
+  // and the same string can appear under dependencies, so it is parsed and only
+  // those keys are rewritten. npm writes JSON.stringify(obj, null, 2) plus a
+  // newline, so reserializing changes just those two lines (verified byte for byte).
   const lockFile = "package-lock.json";
   const lock = JSON.parse(fs.readFileSync(lockFile, "utf8"));
   if (!lock.packages || !lock.packages[""]) {
@@ -127,38 +131,31 @@ if ! git push origin HEAD:main; then
   exit 1
 fi
 
-echo "Triggering release build for v${VERSION} ..."
+echo "Waiting for the release build of v${VERSION} ..."
 
-# workflow_dispatch は run ID を返さないため、起動後にポーリングして拾う。
-# 「最新の run」ではなく「今 push した bump コミットを head に持つ run」を探す:
-# ポーリング中に別の dispatch が挟まっても、他人の run を watch してしまわない。
-# version は毎回インクリメントされるので、この SHA を持つ run は今回の 1 つだけ。
+# The run started by the push takes a moment to show up in the API, so poll for
+# it. Ask for the run whose head is the bump commit just pushed (--commit filters
+# on the server) rather than for the newest runs: another push landing meanwhile
+# must not be the one watched, and fetching the latest N and picking from them
+# could miss the target under a burst of queued releases. Exactly one run carries
+# this SHA.
 RELEASE_SHA=$(git rev-parse HEAD)
 
-if ! gh workflow run release.yml --ref main; then
-  echo "Error: failed to trigger the workflow. v${VERSION} is already pushed to main." >&2
-  echo "  Retry with: gh workflow run release.yml --ref main" >&2
-  exit 1
-fi
-
-# `|| true` が無いと、GitHub API の一時エラーで set -e がリトライループごと殺す
-# (X=$(failing-cmd) は set -e で即 exit する)。ここは「まだ run が出てこない」状態を
-# 待つループなので、失敗は空文字として扱う。
-# 60 回 x 2 秒 = 最大 2 分。run 一覧 API は反映が遅れることがあり、短いと誤判定する。
+# `|| true` keeps a transient API error from killing the whole loop under set -e
+# (X=$(failing-cmd) exits immediately). An empty result here means "not yet".
+# 60 x 2s = 2 minutes; the run list can lag, and a shorter wait misreads that.
 RUN_ID=""
 for _ in $(seq 1 60); do
   sleep 2
-  RUN_ID=$(gh run list --workflow=release.yml --branch main --limit 20 \
-    --json databaseId,headSha \
-    --jq "[.[] | select(.headSha == \"${RELEASE_SHA}\")] | .[0].databaseId // \"\"" \
-    2>/dev/null || true)
+  RUN_ID=$(gh run list --workflow=release.yml --branch main --commit "${RELEASE_SHA}" \
+    --limit 1 --json databaseId --jq '.[0].databaseId // ""' 2>/dev/null || true)
   if [ -n "${RUN_ID}" ]; then
     break
   fi
 done
 if [ -z "${RUN_ID}" ]; then
-  # 見つからないだけで、run 自体は動いている可能性が高い (watch できないだけ)。
-  echo "Error: could not find the triggered workflow run within 2 minutes." >&2
+  # Not found is not the same as not running: the build is most likely under way.
+  echo "Error: could not find the workflow run within 2 minutes." >&2
   echo "  The build may still be running. Check it with:" >&2
   echo "    gh run list --workflow=release.yml" >&2
   exit 1
