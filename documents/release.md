@@ -58,6 +58,12 @@ diff を見ないので、squash / rebase / 直 push のどれで着地しても
   `publish` は道連れで skipped になる。`test` は `!cancelled()` で自動スキップを外し、
   PR か「リリースする version」の時だけ走る (version を変えない main への push で
   macOS ランナーを動かさない)。
+- **`test` で Tauri の crate と npm パッケージの major.minor を突き合わせる**
+  (`scripts/check-tauri-versions.mjs`)。`tauri build` はこれがずれているとビルド前に
+  止まるが、PR の `test` は `tauri build` を走らせないので、片側だけの依存更新が
+  リリースの build で初めて落ちる (v0.1.2 はこれで公開されなかった)。依存を
+  上げる時は `tauri` ↔ `@tauri-apps/api`、`tauri-plugin-*` ↔ `@tauri-apps/plugin-*`
+  を揃えて上げる。
 - **コマンド名は `release`**。`publish` は npm/pnpm 組み込みコマンドと衝突する。
 - **`tauriScript: pnpm exec tauri`** を明示する。省略すると tauri-action は
   `pnpm tauri build` を実行するため、`package.json` の `tauri` スクリプトに

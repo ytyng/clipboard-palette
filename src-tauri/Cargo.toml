@@ -1,6 +1,6 @@
 [package]
 name = "clipboard-palette"
-version = "0.1.2"
+version = "0.1.3"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -15,17 +15,17 @@ name = "clipboard_palette_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2.6", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
-tauri-plugin-opener = "2"
+tauri = { version = "2.11", features = [] }
+tauri-plugin-opener = "2.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 clap = { version = "4", features = ["derive"] }
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
-tauri-plugin-cli = "2.4.0"
+tauri-plugin-cli = "2.4.1"
 
 # Used only to print an exit line when the process is stopped by a signal
 # (src/lifecycle.rs). Already in the tree as a transitive dependency

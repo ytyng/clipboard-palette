@@ -94,14 +94,14 @@ clipboard-palette/
 
 ```toml
 [dependencies]
-tauri = { version = "2", features = [] }
-tauri-plugin-opener = "2"
+tauri = { version = "2.11", features = [] }
+tauri-plugin-opener = "2.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 clap = { version = "4", features = ["derive"] }
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
-tauri-plugin-cli = "2.4.0"
+tauri-plugin-cli = "2.4.1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"   # シグナル受信時の終了ログのみに使う (lifecycle.rs)
@@ -110,6 +110,10 @@ libc = "0.2"   # シグナル受信時の終了ログのみに使う (lifecycle.
 ### Node.js (package.json)
 
 主要な依存関係は Svelte5, Tailwind4, Vite など。
+
+Tauri の crate と npm パッケージ (`tauri` ↔ `@tauri-apps/api`、`tauri-plugin-*` ↔ `@tauri-apps/plugin-*`)
+は major.minor を揃えること。ずれると `tauri build` がビルド前に止まる。PR CI の
+`scripts/check-tauri-versions.mjs` が検査する。
 
 ## 開発・ビルド
 

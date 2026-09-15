@@ -181,6 +181,18 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # The check below reads Cargo.lock, so the lockfile has to be what Cargo will
+      # resolve. Without --locked a Cargo.toml bump with a stale lockfile would pass
+      # the check here and be re-resolved only in the runner's working tree by
+      # cargo test, while the release build starts from the committed lockfile.
+      - name: Check Cargo.lock is up to date
+        run: cargo metadata --locked --format-version 1 --manifest-path src-tauri/Cargo.toml > /dev/null
+
+      # `tauri build` stops before building when these drift apart, and nothing
+      # else in this job would notice (v0.1.2 was lost to exactly that).
+      - name: Check Tauri crate and npm package versions match
+        run: node scripts/check-tauri-versions.mjs
+
       # build.rs runs under cargo test too, and tauri-build fails before it reaches
       # the app's code unless frontendDist (../build) exists, so the front end is
       # built first.
