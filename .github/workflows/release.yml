@@ -181,6 +181,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # `tauri build` stops before building when these drift apart, and nothing
+      # else in this job would notice (v0.1.2 was lost to exactly that).
+      - name: Check Tauri crate and npm package versions match
+        run: node scripts/check-tauri-versions.mjs
+
       # build.rs runs under cargo test too, and tauri-build fails before it reaches
       # the app's code unless frontendDist (../build) exists, so the front end is
       # built first.
