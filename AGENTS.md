@@ -21,11 +21,13 @@ clipboard-palette/
 │   ├── routes/
 │   │   ├── +page.svelte   # メインページ
 │   │   ├── Help.svelte    # ヘルプコンポーネント
-│   │   └── TextCard.svelte # テキストカードコンポーネント
+│   │   ├── TextCard.svelte # テキストカードコンポーネント
+│   │   └── licenses/+page.svelte # Third-Party Licenses ウィンドウ
 │   └── app.html
 ├── src-tauri/              # Tauri バックエンド
 │   ├── src/
 │   │   ├── lib.rs         # メインロジック
+│   │   ├── notices.rs     # --license / Third-Party Licenses (THIRD-PARTY-NOTICES.txt を埋め込む)
 │   │   └── main.rs        # エントリーポイント
 │   └── Cargo.toml         # Rust 依存関係
 ├── tests/                  # テストスクリプト
@@ -42,6 +44,7 @@ clipboard-palette/
 - `--split-empty-line[=N]` / `-s [N]`: N行以上の空行で分割（デフォルト1）
 - `--json` / `-j`: JSON形式で解析
 - `--theme=auto|light|dark`: カラーテーマの指定 (デフォルト auto = OS 設定に従う)。ウィンドウ内容とタイトルバーの両方に適用される
+- `--license`: アプリ自身の MIT ライセンスと `THIRD-PARTY-NOTICES.txt` を stdout に出して終了する (stdin を読まず、ウィンドウも出さない)
 
 ### データ処理モード
 
@@ -84,9 +87,26 @@ clipboard-palette/
 
 出力例と各行の意味は README.md の「Lifecycle Log」節にまとめてある。
 
+### 依存ライブラリのライセンス表示 (src-tauri/src/notices.rs)
+
+`THIRD-PARTY-NOTICES.txt` は `scripts/generate-third-party-notices.sh` (`pnpm notices`) の生成物で、
+`notices.rs` が `include_str!` で埋め込み、`--license` とアプリメニューの Third-Party Licenses
+(About の直下。`licenses` ウィンドウ = `src/routes/licenses/+page.svelte`) に出す。
+
+- **依存を足す・上げる時は `pnpm notices` を流し直してコミットする。** notices が `Cargo.lock` /
+  `pnpm-lock.yaml` と食い違うと `cargo test` が落ちる
+- Rust 側は cargo-about (`cargo install cargo-about --locked --features cli`)。`src-tauri/about.toml`
+  の `targets` で配布ターゲット (macOS の 2 つ) だけに絞っている。Windows / Linux 専用の crate は載らない
+- npm 側は `package.json` の `dependencies` ではなく、**vite が web view に bundle するパッケージ**を
+  スクリプト内の `NPM_PACKAGES` に列挙している (`@tailwindcss/vite` はビルドツール、
+  `@tauri-apps/plugin-*` はフロントから import していない、SvelteKit のランタイムは devDependencies)。
+  フロントで新しいパッケージを import したら `NPM_PACKAGES` に足す
+- メニューは `Menu::default` に項目を 1 つ挿入したもの。macOS だけで設定する (他 OS はメニューバー無しのまま)
+
 ### Tauri コマンド
 
 - `get_clipboard_data`: フロントエンドからバックエンドのデータを取得
+- `third_party_notices`: 埋め込んだ `THIRD-PARTY-NOTICES.txt` を返す (licenses ウィンドウ用)
 
 ## 依存関係
 

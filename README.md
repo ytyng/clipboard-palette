@@ -157,6 +157,16 @@ echo "Hello, World!" | clipboard-palette --theme=auto   # Follow the OS setting 
 The theme applies to the window content and the title bar. This is independent
 of the modes above.
 
+### License (--license)
+
+```shell
+clipboard-palette --license
+```
+
+Prints the MIT license of clipboard-palette and the licenses of the bundled
+third-party libraries (`THIRD-PARTY-NOTICES.txt`), then exits without reading
+standard input or opening a window.
+
 ## Lifecycle Log
 
 The app is often launched by a script or an AI agent that only sees its output,
@@ -253,3 +263,22 @@ forward piped standard input to the app.
 
 `RUN_MODE=release` requires `pnpm tauri build` beforehand.
 
+## License
+
+clipboard-palette is released under the [MIT License](LICENSE).
+
+## Third-party licenses
+
+`THIRD-PARTY-NOTICES.txt` lists the licenses of the libraries bundled into the
+app: every Rust crate compiled into the macOS binary, and the npm packages that
+end up in the web view bundle (svelte, @sveltejs/kit, esm-env, @tauri-apps/api
+and the Tailwind CSS preflight). It is compiled into the app and can be read
+with "Third-Party Licenses" in the app menu (right below About) or with
+`clipboard-palette --license`. Regenerate it after adding or updating a
+dependency; the Rust tests fail when it no longer matches `Cargo.lock` or
+`pnpm-lock.yaml`.
+
+```shell
+cargo install cargo-about --locked --features cli   # once
+pnpm notices
+```

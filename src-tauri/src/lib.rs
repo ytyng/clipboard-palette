@@ -1,4 +1,5 @@
 mod lifecycle;
+mod notices;
 
 use serde::{Deserialize, Serialize};
 use std::io::{self, IsTerminal, Read};
@@ -123,6 +124,10 @@ struct Args {
         value_name = "THEME"
     )]
     theme: ThemeArg,
+
+    /// Print the license and the third-party license notices, then exit
+    #[arg(long = "license")]
+    license: bool,
 }
 
 #[tauri::command]
@@ -250,6 +255,16 @@ fn build_items(
     Ok(items)
 }
 
+/// Script that hands the --theme value to the page before the first paint
+/// (src/app.html and src/lib/theme.ts read it). Used by every window, so the
+/// licenses window follows --theme like the main one.
+fn theme_init_script(theme_name: &str) -> Result<String, serde_json::Error> {
+    Ok(format!(
+        "window.__CLIPBOARD_PALETTE_THEME__ = {};",
+        serde_json::to_string(theme_name)?
+    ))
+}
+
 /// Build the main window.
 ///
 /// The window is declared with create: false in tauri.conf.json and is built
@@ -268,10 +283,7 @@ fn build_main_window(
         .find(|w| w.label == MAIN_WINDOW_LABEL)
         .cloned()
         .ok_or("window config \"main\" not found")?;
-    let init_script = format!(
-        "window.__CLIPBOARD_PALETTE_THEME__ = {};",
-        serde_json::to_string(theme_name)?
-    );
+    let init_script = theme_init_script(theme_name)?;
     // The theme goes on the builder rather than being applied afterwards, so
     // the title bar never paints with the OS theme first. None follows the OS
     WebviewWindowBuilder::from_config(app.handle(), &window_config)?
@@ -286,6 +298,11 @@ fn build_main_window(
 pub fn run() {
     // Parse the arguments first so that --help does not block on stdin
     let args = Args::parse();
+    // --license prints and exits before anything reads stdin or opens a window
+    if args.license {
+        print!("{}", notices::license_text());
+        return;
+    }
     // Install the failure reporting first, so that even a panic in the startup
     // reporting below shows up on stdout
     lifecycle::install_panic_logger();
@@ -309,7 +326,25 @@ pub fn run() {
         }
     };
 
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // The default menu with "Third-Party Licenses" below About. macOS only: the
+    // app is released for macOS, and elsewhere there is no menu bar to extend
+    #[cfg(target_os = "macos")]
+    let builder = builder.menu(notices::app_menu);
+    let app = builder
+        .on_menu_event(move |app, event| {
+            if event.id() == notices::LICENSES_MENU_ID {
+                let shown = theme_init_script(theme_name)
+                    .map_err(|e| e.to_string())
+                    .and_then(|script| {
+                        notices::show_licenses_window(app, script, window_theme)
+                            .map_err(|e| e.to_string())
+                    });
+                if let Err(e) = shown {
+                    eprintln!("Failed to show the licenses window: {}", e);
+                }
+            }
+        })
         .setup(move |app| {
             #[cfg(desktop)]
             app.handle().plugin(tauri_plugin_cli::init())?;
@@ -327,7 +362,10 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_clipboard_data])
+        .invoke_handler(tauri::generate_handler![
+            get_clipboard_data,
+            notices::third_party_notices
+        ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
@@ -503,5 +541,11 @@ mod tests {
     #[test]
     fn an_unknown_theme_is_rejected() {
         assert!(Args::try_parse_from(["clipboard-palette", "--theme=neon"]).is_err());
+    }
+
+    #[test]
+    fn license_is_off_unless_asked_for() {
+        assert!(!args_from(&[]).license);
+        assert!(args_from(&["--license"]).license);
     }
 }
