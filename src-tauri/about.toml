@@ -1,0 +1,29 @@
+# cargo-about settings, read by scripts/generate-third-party-notices.sh.
+# Only the crates that end up in the shipped app are listed: build-time and
+# test-only dependencies are left out, and so are the crates that only a target
+# the app is not shipped for (Linux, Windows) would pull in. The app is released
+# for macOS only (universal-apple-darwin in .github/workflows/release.yml).
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unlicense",
+    "0BSD",
+    "MIT-0",
+    "CC0-1.0",
+    "BSL-1.0",
+    "MPL-2.0",
+]
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
+workarounds = ["ring", "rustls"]
+
+# Keep clipboard-palette itself (publish = false) out of the list
+[private]
+ignore = true

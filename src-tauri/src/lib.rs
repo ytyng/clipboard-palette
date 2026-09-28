@@ -1,4 +1,5 @@
 mod lifecycle;
+mod notices;
 
 use serde::{Deserialize, Serialize};
 use std::io::{self, IsTerminal, Read};
@@ -123,6 +124,10 @@ struct Args {
         value_name = "THEME"
     )]
     theme: ThemeArg,
+
+    /// Print the license and the third-party license notices, then exit
+    #[arg(long = "license")]
+    license: bool,
 }
 
 #[tauri::command]
@@ -286,6 +291,11 @@ fn build_main_window(
 pub fn run() {
     // Parse the arguments first so that --help does not block on stdin
     let args = Args::parse();
+    // --license prints and exits before anything reads stdin or opens a window
+    if args.license {
+        print!("{}", notices::license_text());
+        return;
+    }
     // Install the failure reporting first, so that even a panic in the startup
     // reporting below shows up on stdout
     lifecycle::install_panic_logger();
@@ -309,7 +319,19 @@ pub fn run() {
         }
     };
 
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // The default menu with "Third-Party Licenses" below About. macOS only: the
+    // app is released for macOS, and elsewhere there is no menu bar to extend
+    #[cfg(target_os = "macos")]
+    let builder = builder.menu(notices::app_menu);
+    let app = builder
+        .on_menu_event(|app, event| {
+            if event.id() == notices::LICENSES_MENU_ID {
+                if let Err(e) = notices::show_licenses_window(app) {
+                    eprintln!("Failed to show the licenses window: {}", e);
+                }
+            }
+        })
         .setup(move |app| {
             #[cfg(desktop)]
             app.handle().plugin(tauri_plugin_cli::init())?;
@@ -327,7 +349,10 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_clipboard_data])
+        .invoke_handler(tauri::generate_handler![
+            get_clipboard_data,
+            notices::third_party_notices
+        ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
@@ -503,5 +528,11 @@ mod tests {
     #[test]
     fn an_unknown_theme_is_rejected() {
         assert!(Args::try_parse_from(["clipboard-palette", "--theme=neon"]).is_err());
+    }
+
+    #[test]
+    fn license_is_off_unless_asked_for() {
+        assert!(!args_from(&[]).license);
+        assert!(args_from(&["--license"]).license);
     }
 }
