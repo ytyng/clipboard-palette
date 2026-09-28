@@ -255,6 +255,16 @@ fn build_items(
     Ok(items)
 }
 
+/// Script that hands the --theme value to the page before the first paint
+/// (src/app.html and src/lib/theme.ts read it). Used by every window, so the
+/// licenses window follows --theme like the main one.
+fn theme_init_script(theme_name: &str) -> Result<String, serde_json::Error> {
+    Ok(format!(
+        "window.__CLIPBOARD_PALETTE_THEME__ = {};",
+        serde_json::to_string(theme_name)?
+    ))
+}
+
 /// Build the main window.
 ///
 /// The window is declared with create: false in tauri.conf.json and is built
@@ -273,10 +283,7 @@ fn build_main_window(
         .find(|w| w.label == MAIN_WINDOW_LABEL)
         .cloned()
         .ok_or("window config \"main\" not found")?;
-    let init_script = format!(
-        "window.__CLIPBOARD_PALETTE_THEME__ = {};",
-        serde_json::to_string(theme_name)?
-    );
+    let init_script = theme_init_script(theme_name)?;
     // The theme goes on the builder rather than being applied afterwards, so
     // the title bar never paints with the OS theme first. None follows the OS
     WebviewWindowBuilder::from_config(app.handle(), &window_config)?
@@ -325,9 +332,15 @@ pub fn run() {
     #[cfg(target_os = "macos")]
     let builder = builder.menu(notices::app_menu);
     let app = builder
-        .on_menu_event(|app, event| {
+        .on_menu_event(move |app, event| {
             if event.id() == notices::LICENSES_MENU_ID {
-                if let Err(e) = notices::show_licenses_window(app) {
+                let shown = theme_init_script(theme_name)
+                    .map_err(|e| e.to_string())
+                    .and_then(|script| {
+                        notices::show_licenses_window(app, script, window_theme)
+                            .map_err(|e| e.to_string())
+                    });
+                if let Err(e) = shown {
                     eprintln!("Failed to show the licenses window: {}", e);
                 }
             }

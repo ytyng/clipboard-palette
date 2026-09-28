@@ -6,7 +6,7 @@
 //! the binary, so the app never reads the repository at run time.
 
 use tauri::menu::{Menu, MenuItem, HELP_SUBMENU_ID};
-use tauri::{AppHandle, Manager, Runtime, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, Runtime, Theme, WebviewUrl, WebviewWindowBuilder};
 
 /// The app's own license (MIT).
 const LICENSE: &str = include_str!("../../LICENSE");
@@ -59,7 +59,14 @@ pub fn app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
 
 /// Show the Third-Party Licenses window, or bring it to the front if it is
 /// already open. It is destroyed when closed.
-pub fn show_licenses_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
+///
+/// `init_script` and `theme` carry --theme, the same way the main window gets
+/// them, so the content and the title bar do not fall back to the OS theme.
+pub fn show_licenses_window<R: Runtime>(
+    app: &AppHandle<R>,
+    init_script: String,
+    theme: Option<Theme>,
+) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window(LICENSES_WINDOW_LABEL) {
         window.show()?;
         return window.set_focus();
@@ -74,6 +81,8 @@ pub fn show_licenses_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()>
     .inner_size(640.0, 560.0)
     .min_inner_size(400.0, 300.0)
     .center()
+    .initialization_script(init_script)
+    .theme(theme)
     .build()?;
     Ok(())
 }

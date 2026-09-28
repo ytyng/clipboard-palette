@@ -2,7 +2,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { onMount } from "svelte";
-  import { applyTheme } from "$lib/theme";
+  import { applyTheme, injectedTheme } from "$lib/theme";
 
   // Shown by "Third-Party Licenses" in the app menu (src-tauri/src/notices.rs)
   let notices = $state("");
@@ -16,7 +16,8 @@
   }
 
   onMount(async () => {
-    applyTheme("auto");
+    // --theme reaches this window through the same initialization script
+    applyTheme(injectedTheme());
     try {
       notices = await invoke<string>("third_party_notices");
     } catch (e) {
