@@ -157,6 +157,26 @@ echo "Hello, World!" | clipboard-palette --theme=auto   # Follow the OS setting 
 The theme applies to the window content and the title bar. This is independent
 of the modes above.
 
+### Open Mode (hold Shift)
+
+While Shift is held, cards whose text is a URL or a file path are underlined,
+and clicking one opens it instead of copying it:
+
+- An `http://` / `https://` URL opens in the default browser. Other schemes
+  (`file:`, `mailto:`, custom app schemes) are not opened
+- A file path (`/...`, `~`, `~/...`, `./...`, `../...`; on Windows also
+  `C:\...` and `\\server\...`) is shown in Finder with the file selected.
+  Relative paths are resolved against the directory clipboard-palette was
+  started from. If the path does not exist, its nearest existing parent is
+  shown instead. Paths are only ever revealed, never opened, so an `.app`
+  bundle is selected rather than launched
+
+Only single-line text counts. Other cards copy as usual, Shift or not.
+
+```shell
+printf 'https://example.com\n~/Downloads\n' | clipboard-palette -m
+```
+
 ### License (--license)
 
 ```shell
