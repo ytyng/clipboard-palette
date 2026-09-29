@@ -28,6 +28,7 @@ clipboard-palette/
 │   ├── src/
 │   │   ├── lib.rs         # メインロジック
 │   │   ├── notices.rs     # --license / Third-Party Licenses (THIRD-PARTY-NOTICES.txt を埋め込む)
+│   │   ├── open_target.rs # オープンモード (Shift + クリックで URL / パスを開く)
 │   │   └── main.rs        # エントリーポイント
 │   └── Cargo.toml         # Rust 依存関係
 ├── tests/                  # テストスクリプト
@@ -60,6 +61,27 @@ clipboard-palette/
 - src/app.html のインラインスクリプトが、注入値 → OS 設定の順で `data-theme` を決める。初回描画より前に確定するのでちらつかない
 - 起動データ取得後に `src/lib/theme.ts` の `applyTheme()` を呼ぶ。`auto` のときは `matchMedia` を監視して OS 側の切り替えにも追従する
 - タイトルバーは `WebviewWindow::set_theme()` で設定する (macOS ではアプリ全体に効く)
+
+### オープンモード (src-tauri/src/open_target.rs)
+
+Shift を押している間、テキストが URL かファイルパスのカードは下線付きになり、クリックで
+コピーの代わりに開く (URL はデフォルトブラウザ、パスは Finder で選択状態にして表示)。
+
+- 判定 (`classify`) は Rust 側でだけ行い、`ClipboardItem.open_kind` (`"url"` / `"path"` / null)
+  としてフロントに渡す。`--json` の入力に `open_kind` を書いても無視される (`skip_deserializing`)
+- **フロントから送るのは item の index だけ。** `open_item` は state からテキストを読み直して
+  もう一度判定してから開く。web view から任意の文字列を開かせないため
+- URL は http / https だけ。`file:` や独自スキームはアプリを起動しうるので開かない。
+  `//` の直後にホストが書かれていること (`https://?q` / `https:///path` は URL 扱いしない)
+- 1 行のテキストだけが対象。相対パスはプロセスの cwd (起動したシェルのディレクトリ) 基準、
+  `~` はホームに展開する。Windows 形式 (`C:\` / UNC) は Windows でだけパス扱い
+  (macOS では相対パスになり cwd 下の無関係なフォルダを開くため)
+- **パスは必ず reveal (`reveal_item_in_dir`) し、`open_path` は使わない。** `.app` バンドルは
+  ディレクトリなので、open するとアプリが起動する。存在しないパスは最も近い既存の祖先を reveal する
+- 開く処理は `tauri-plugin-opener` の関数を Rust から直接呼んでいる (プラグインの登録も
+  JS 側の import も無いので、capability への opener 権限追加は不要)
+- Shift の状態は `+page.svelte` が keydown / keyup / mousemove の `shiftKey` で追い、ウィンドウの
+  blur で解除する。クリック時の分岐は click イベント自身の `shiftKey` で決める
 
 ### ライフサイクルログ (src-tauri/src/lifecycle.rs)
 
@@ -106,6 +128,7 @@ clipboard-palette/
 ### Tauri コマンド
 
 - `get_clipboard_data`: フロントエンドからバックエンドのデータを取得
+- `open_item`: オープンモードで index の item を開く (open_target.rs)
 - `third_party_notices`: 埋め込んだ `THIRD-PARTY-NOTICES.txt` を返す (licenses ウィンドウ用)
 
 ## 依存関係

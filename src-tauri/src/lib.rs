@@ -1,5 +1,6 @@
 mod lifecycle;
 mod notices;
+mod open_target;
 
 use serde::{Deserialize, Serialize};
 use std::io::{self, IsTerminal, Read};
@@ -43,6 +44,20 @@ impl ThemeArg {
 pub struct ClipboardItem {
     pub label: String,
     pub text: String,
+    /// What the card opens in open mode (Shift held), if anything.
+    /// Always decided here from the text, never taken from the JSON input
+    #[serde(default, skip_deserializing)]
+    pub open_kind: Option<open_target::OpenKind>,
+}
+
+impl ClipboardItem {
+    fn new(label: &str, text: &str) -> Self {
+        ClipboardItem {
+            label: label.to_string(),
+            text: text.to_string(),
+            open_kind: None,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -217,14 +232,11 @@ fn build_items(
     mode: &str,
     split_empty_line_count: usize,
 ) -> Result<Vec<ClipboardItem>, String> {
-    let items = match mode {
+    let items: Vec<ClipboardItem> = match mode {
         "multiline" => buffer
             .lines()
             .filter(|line| !line.trim().is_empty())
-            .map(|line| ClipboardItem {
-                label: line.to_string(),
-                text: line.to_string(),
-            })
+            .map(|line| ClipboardItem::new(line, line))
             .collect(),
         "split-empty-line" => {
             // Split at the given number of empty lines.
@@ -236,22 +248,23 @@ fn build_items(
             normalized
                 .split(&delimiter)
                 .filter(|section| !section.trim().is_empty())
-                .map(|section| ClipboardItem {
-                    label: section.to_string(),
-                    text: section.to_string(),
-                })
+                .map(|section| ClipboardItem::new(section, section))
                 .collect()
         }
         "json" => serde_json::from_str::<Vec<ClipboardItem>>(buffer)
             .map_err(|e| format!("Failed to parse JSON: {}", e))?,
         _ => {
             // normal mode
-            vec![ClipboardItem {
-                label: buffer.trim().to_string(),
-                text: buffer.trim().to_string(),
-            }]
+            vec![ClipboardItem::new(buffer.trim(), buffer.trim())]
         }
     };
+    let items = items
+        .into_iter()
+        .map(|item| ClipboardItem {
+            open_kind: open_target::classify(&item.text),
+            ..item
+        })
+        .collect();
     Ok(items)
 }
 
@@ -364,6 +377,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_clipboard_data,
+            open_target::open_item,
             notices::third_party_notices
         ])
         .build(tauri::generate_context!())
@@ -518,6 +532,28 @@ mod tests {
         let buffer = default_data_buffer();
         let items = build_items(&buffer, "json", 1).unwrap();
         assert_eq!(items.len(), 2);
+    }
+
+    #[test]
+    fn items_know_what_they_open() {
+        use crate::open_target::OpenKind;
+        let items =
+            build_items("https://example.com\n~/Downloads\nhello\n", "multiline", 1).unwrap();
+        let kinds: Vec<_> = items.iter().map(|i| i.open_kind).collect();
+        assert_eq!(kinds, vec![Some(OpenKind::Url), Some(OpenKind::Path), None]);
+    }
+
+    #[test]
+    fn json_input_cannot_choose_what_an_item_opens() {
+        // open_kind comes from the text only; the input cannot mark plain text
+        // as openable
+        let items = build_items(
+            r#"[{"label": "L", "text": "hello", "open_kind": "url"}]"#,
+            "json",
+            1,
+        )
+        .unwrap();
+        assert_eq!(items[0].open_kind, None);
     }
 
     #[test]

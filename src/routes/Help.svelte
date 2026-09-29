@@ -59,5 +59,10 @@
     <p class="text-xs mt-4 italic">
       各ボタンをクリックするとテキストがクリップボードにコピーされます。
     </p>
+    <p class="text-xs italic">
+      Shift を押しながらだとオープンモードになり、URL
+      のボタンはデフォルトブラウザで、ファイルパスのボタンは Finder
+      で開きます。
+    </p>
   </div>
 </div>

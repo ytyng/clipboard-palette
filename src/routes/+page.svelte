@@ -8,6 +8,7 @@
   interface ClipboardItem {
     label: string;
     text: string;
+    open_kind: "url" | "path" | null;
   }
 
   interface AppData {
@@ -20,6 +21,11 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let activeItemIndex = $state<number | null>(null);
+  // Open mode: while Shift is held, URL and path cards open instead of copying
+  let openMode = $state(false);
+  function syncOpenMode(event: KeyboardEvent | MouseEvent) {
+    openMode = event.shiftKey;
+  }
 
   function handleItemClick(index: number) {
     activeItemIndex = index;
@@ -38,6 +44,16 @@
   });
 </script>
 
+<!-- Mouse events carry shiftKey too, which catches a Shift pressed while
+     another app had the focus. Losing the focus drops the mode, since the
+     keyup would go elsewhere -->
+<svelte:window
+  onkeydown={syncOpenMode}
+  onkeyup={syncOpenMode}
+  onmousemove={syncOpenMode}
+  onblur={() => (openMode = false)}
+/>
+
 <main class="min-h-screen bg-gray-100 dark:bg-gray-900">
   {#if loading}
     <div class="text-gray-600 dark:text-gray-400">Loading...</div>
@@ -50,6 +66,8 @@
       {#each appData.items as item, index}
         <TextCard
           {item}
+          {index}
+          {openMode}
           isActive={activeItemIndex === index}
           onCopy={() => handleItemClick(index)}
         />
