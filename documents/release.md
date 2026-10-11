@@ -2,6 +2,7 @@
 
 macOS 向けの universal dmg を GitHub Actions でビルドし、Developer ID で署名 +
 Apple の公証 (notarization) + staple まで通して GitHub Release に公開する。
+公証と staple は中の `.app` と dmg の両方に行う。
 Homebrew tap ([ytyng/homebrew-tap](https://github.com/ytyng/homebrew-tap)) の
 `Casks/clipboard-palette.rb` は tap 側の workflow が毎時、公開済みの最新 Release を
 見に来て書き換える。このリポジトリから tap へ push はしない。
@@ -49,11 +50,21 @@ diff を見ないので、squash / rebase / 直 push のどれで着地しても
 
 ## 構成上の判断 (なぜこうなっているか)
 
-- **draft → publish の 2 段構え**。tauri-action は `v<version>` の Release を
-  draft で作り、ビルドが全て成功した後に `publish` ジョブが
+- **build は tauri CLI を直接実行し、dmg の公証とアップロードを別ステップにする**。
+  `APPLE_*` を渡すと tauri CLI は `.app` に署名 + 公証 + staple をし、dmg には
+  署名だけをする。dmg を公証しないと、ダウンロードした dmg が
+  `spctl -a -t open --context context:primary-signature` で
+  `rejected / source=Unnotarized Developer ID` になる (v0.3.0 まではこの状態)。
+  tauri-action はビルドとアップロードを 1 ステップで行い、その間に dmg の公証を
+  挟めないので使わない。dmg は `notarytool submit --wait` (exit code と
+  `status: Accepted` の両方で判定し、失敗時は `notarytool log` を出す) →
+  `stapler staple` → `stapler validate` → `spctl --type open` の順に通す。
+- **draft → publish の 2 段構え**。build の最後のステップが `v<version>` の
+  Release を draft で作って (ある draft は使い回し、この run の commit に向け直す)
+  dmg を ID 指定で上げ、ビルドが全て成功した後に `publish` ジョブが
   `gh release edit --draft=false` で公開する。将来 Windows leg を matrix に
-  足した時、片方だけ成功した不完全な Release が公開されるのを防ぐ。失敗した run が
-  残した draft は、同じ version の再実行で tauri-action がそのまま使う。
+  足した時、片方だけ成功した不完全な Release が公開されるのを防ぐ。再実行では
+  同名の asset を消してから上げ直す。同じ tag の Release が公開済みなら何もせず失敗する。
 - **PR では test だけが走る**。`plan` が `pull_request` で skipped になり、`build` /
   `publish` は道連れで skipped になる。`test` は `!cancelled()` で自動スキップを外し、
   PR か「リリースする version」の時だけ走る (version を変えない main への push で
@@ -65,11 +76,10 @@ diff を見ないので、squash / rebase / 直 push のどれで着地しても
   上げる時は `tauri` ↔ `@tauri-apps/api`、`tauri-plugin-*` ↔ `@tauri-apps/plugin-*`
   を揃えて上げる。
 - **コマンド名は `release`**。`publish` は npm/pnpm 組み込みコマンドと衝突する。
-- **`tauriScript: pnpm exec tauri`** を明示する。省略すると tauri-action は
-  `pnpm tauri build` を実行するため、`package.json` の `tauri` スクリプトに
-  `APPLE_SIGNING_IDENTITY='...' tauri` のようなインライン代入を足した瞬間に、
-  workflow から渡した env が黙って上書きされる (シェルのインライン代入は継承 env
-  より強い)。CLI を直接叩けば Secret 側が唯一の正になる。
+- **`pnpm exec tauri build`** で CLI を直接叩く (`pnpm tauri build` ではなく)。
+  `package.json` の `tauri` スクリプトに `APPLE_SIGNING_IDENTITY='...' tauri` の
+  ようなインライン代入を足した瞬間に、workflow から渡した env が黙って上書きされる
+  (シェルのインライン代入は継承 env より強い)。CLI を直接叩けば Secret 側が唯一の正になる。
 - **`concurrency` は `cancel-in-progress: false` + `queue: max`**。1 push =
   1 version なので、run がキャンセルされるとその version の公開が遅れる
   (bump コミットは main に載ったまま)。既定の `queue: single` は pending を 1 件
@@ -83,13 +93,10 @@ diff を見ないので、squash / rebase / 直 push のどれで着地しても
   に残さない (`pnpm install` の install script や third-party action から拾えてしまう)。
 - **フロントエンドのビルドを Secret の無いステップに分離する**。`tauri build` は
   `beforeBuildCommand` (`pnpm build`) を子プロセスとして起動し、子プロセスは
-  環境変数を継承する。分離しないと vite とその依存パッケージが `APPLE_PASSWORD` /
-  `GITHUB_TOKEN` を読める環境で動くことになり、悪意ある依存が 1 つ混ざるだけで
-  持ち出せてしまう。署名ビルド側は `src-tauri/tauri.ci.conf.json` を `--config` で
-  重ねて `beforeBuildCommand` を空にし、二重ビルドを避ける。
-  この設定を `--config {"build":{...}}` のインライン JSON で渡してはいけない —
-  tauri-action は `args` を string-argv でパースしてクォートを剥がすため JSON が
-  壊れる。クォートを含まないファイルパスなら影響を受けない。
+  環境変数を継承する。分離しないと vite とその依存パッケージが `APPLE_PASSWORD`
+  を読める環境で動くことになり、悪意ある依存が 1 つ混ざるだけで持ち出せてしまう。
+  署名ビルド側は `src-tauri/tauri.ci.conf.json` を `--config` で重ねて
+  `beforeBuildCommand` を空にし、二重ビルドを避ける。
 - **ローカルは ad-hoc 署名のまま**。`tauri.conf.json` に `signingIdentity: "-"` を
   残しておくと、env の無いローカルビルドは ad-hoc、CI は `APPLE_SIGNING_IDENTITY`
   が config を上書きして Developer ID で署名する (tauri-cli の優先順位 env > config)。
@@ -121,7 +128,10 @@ tap 用の token (`HOMEBREW_TAP_TOKEN`) はもう使わない。
 Release の dmg をダウンロードして実機確認する。
 
 ```shell
-hdiutil attach -nobrowse -quiet clipboard-palette_X.Y.Z_universal.dmg
+DMG=clipboard-palette_X.Y.Z_universal.dmg
+spctl -a -vv -t open --context context:primary-signature "$DMG"   # accepted / source=Notarized Developer ID
+xcrun stapler validate "$DMG"        # The validate action worked!
+hdiutil attach -nobrowse -quiet "$DMG"
 APP=/Volumes/clipboard-palette/clipboard-palette.app
 codesign -dv --verbose=2 "$APP"      # Authority=Developer ID Application: ... / flags=...runtime
 spctl -a -vvv "$APP"                 # accepted / source=Notarized Developer ID
@@ -151,14 +161,16 @@ clipboard-palette --help
   `pnpm release` (独立したコミット) で行い、機能 PR に混ぜないこと。
 - **Rust 側のビルドスクリプトには依然として secrets が見える**。フロントエンドの
   ビルドは分離したが、`tauri build` は署名・公証と一体で cargo のビルドを走らせる
-  ため、`APPLE_PASSWORD` / `GITHUB_TOKEN` を持つ環境で Rust 依存クレートの
-  `build.rs` が実行される。完全に塞ぐには「未署名でビルド → 別ステップで codesign +
-  notarytool + stapler を手動実行」まで分解する必要があり、tauri-action を捨てて
-  workflow が大幅に複雑化する。cargo の依存は `Cargo.lock` で固定されているため、
-  現状はこのリスクを受け入れている。
+  ため、`APPLE_PASSWORD` を持つ環境で Rust 依存クレートの `build.rs` が実行される
+  (`GITHUB_TOKEN` は Build ステップには渡していない)。完全に塞ぐには「未署名で
+  ビルド → 別ステップで `.app` の codesign + notarytool + stapler を手動実行」まで
+  分解する必要がある。cargo の依存は `Cargo.lock` で固定されているため、現状は
+  このリスクを受け入れている。
 - `pnpm release` は `main` へ**直接 push** する。ブランチ保護 (PR 必須) を
   掛けると破綻する。掛けるなら version bump を PR で出す運用にする (workflow 側は
   そのままで動く)。
 - Windows ビルドは含めていない。必要になったら `release.yml` の matrix に
   `windows-latest` / `--bundles nsis` の leg を足す (APPLE_* は
   `matrix.platform == 'macos-latest'` の条件式で既に macOS 限定になっている)。
+  dmg の公証と draft へのアップロードのステップも macOS 限定なので、Windows の
+  成果物を draft に上げるステップは別に要る。
