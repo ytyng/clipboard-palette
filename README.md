@@ -236,8 +236,8 @@ shown, but the process does not fail on its own: it just keeps running with
 nothing on screen. To make that visible, the app exits with status 1 when the
 page has not loaded within 10 seconds, printing `startup failed` and
 `exit: reason=startup-timeout` on stdout and a hint on stderr. Run the command
-outside the sandbox (for Claude Code, `/sandbox` and exclude
-`clipboard-palette`, or add it to `excludedCommands`).
+outside the sandbox (for Claude Code, add `clipboard-palette` to
+`sandbox.excludedCommands`).
 
 ```shell
 echo "Hello" | clipboard-palette --startup-timeout=30   # wait longer on a slow machine
