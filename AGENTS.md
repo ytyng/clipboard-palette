@@ -45,6 +45,9 @@ clipboard-palette/
 - `--split-empty-line[=N]` / `-s [N]`: N行以上の空行で分割（デフォルト1）
 - `--json` / `-j`: JSON形式で解析
 - `--theme=auto|light|dark`: カラーテーマの指定 (デフォルト auto = OS 設定に従う)。ウィンドウ内容とタイトルバーの両方に適用される
+- `--input <FILE>` / `-i`: 標準入力の代わりにファイルから読む。空ファイルはエラー (サンプルデータにしない)。
+  Claude Code はリダイレクト・パイプ・`$(...)` を含む呼び出しを excludedCommands に一致してもサンドボックス内で
+  動かすため、サンドボックス外で起動させるにはファイルを引数で渡す必要がある
 - `--license`: アプリ自身の MIT ライセンスと `THIRD-PARTY-NOTICES.txt` を stdout に出して終了する (stdin を読まず、ウィンドウも出さない)
 
 ### データ処理モード
@@ -103,6 +106,17 @@ Shift を押している間、テキストが URL かファイルパスのカー
 - ウィンドウの build は `RunEvent` より前なので、失敗は `setup` 内で
   `startup failed:` として出す。パニックは stderr にしか出ないため、panic hook で
   stdout にも `exit: reason=panic` を出している
+- **起動タイムアウト (`--startup-timeout`、既定 10 秒、0 で無効)**: メインページが
+  `get_clipboard_data` を呼んだ時点で `page loaded` を出す (IPC が届いたという意味で、
+  可視性の保証ではない。成功判定は `startup ok` と両方で行う)。watchdog は stdin を読んだ後、
+  Tauri の初期化より前に起動する (GUI バックエンドの初期化で止まった場合も拾うため)。それまでに時間切れになったら
+  `startup failed: the page did not load ...` と `exit: reason=startup-timeout code=1` を出し、
+  stderr にサンドボックスの対処を書いて exit 1 する。Claude Code の
+  サンドボックス (Seatbelt) 内ではウインドウが出ないのにプロセスは落ちず居残るため。
+  ウインドウのフラグはアプリ自身の状態なので、この状況でも `visible=true` になりうる。
+  watchdog は別スレッドで、メインスレッドにもイベントループにも触れずに `process::exit` する
+  (イベントループが止まっていても発火させるため)。**サンドボックス内で本当に page loaded が
+  出ないか・フラグがどうなるかは Linux では確認できておらず、macOS の実機確認が残っている**
 - 他インスタンスの検知は `ps -A -o pid=,comm=` を使う。macOS は comm に実行ファイルの
   フルパス、Linux は 15 文字に切り詰めた basename を出すので、両方に一致するよう
   比較している (`is_same_program`)。この比較と ps 出力のパースには単体テストがある

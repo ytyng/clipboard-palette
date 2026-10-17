@@ -4,7 +4,9 @@ mod open_target;
 
 use serde::{Deserialize, Serialize};
 use std::io::{self, IsTerminal, Read};
-use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tauri::{App, Manager, RunEvent, State, Theme, WebviewWindowBuilder};
 use clap::{Parser, ValueEnum};
 
@@ -69,6 +71,9 @@ pub struct AppData {
 
 pub struct AppState {
     pub data: Mutex<Option<AppData>>,
+    /// Set once the main page has asked for its data; read by the startup
+    /// watchdog
+    pub page_loaded: Arc<AtomicBool>,
 }
 
 #[derive(Parser)]
@@ -113,6 +118,7 @@ EXAMPLES:
   echo '[{"label":"Greeting","text":"Hello"}]' | clipboard-palette --json
   pbpaste | clipboard-palette -m
   echo "Hello, World!" | clipboard-palette --theme=dark
+  clipboard-palette --json --input palette.json
 
 THEME:
   The window content and the title bar follow the OS setting by default.
@@ -140,14 +146,31 @@ struct Args {
     )]
     theme: ThemeArg,
 
+    /// Read the text from FILE instead of standard input
+    #[arg(short = 'i', long = "input", value_name = "FILE")]
+    input: Option<std::path::PathBuf>,
+
     /// Print the license and the third-party license notices, then exit
     #[arg(long = "license")]
     license: bool,
+
+    /// Exit with status 1 if the window has not loaded within SECONDS
+    /// (it never does inside a sandbox). 0 waits forever
+    #[arg(long = "startup-timeout", value_name = "SECONDS", default_value_t = 10)]
+    startup_timeout: u64,
+}
+
+impl Args {
+    /// How long the startup watchdog waits for the page. None disables it
+    fn startup_timeout(&self) -> Option<Duration> {
+        (self.startup_timeout > 0).then(|| Duration::from_secs(self.startup_timeout))
+    }
 }
 
 #[tauri::command]
 fn get_clipboard_data(state: State<AppState>) -> Result<AppData, String> {
     println!("get_clipboard_data called");
+    lifecycle::log_page_loaded(&state.page_loaded);
     let data = state.data.lock().unwrap();
 
     match &*data {
@@ -171,8 +194,19 @@ fn default_data_buffer() -> String {
 
 fn read_stdin_data(args: &Args) -> Result<AppData, String> {
     // When stdin is a TTY (launched straight from a terminal) do not read it and
-    // use the sample data instead. is_default_data records that substitution
-    let (buffer, is_default_data) = if io::stdin().is_terminal() {
+    // use the sample data instead. is_default_data records that substitution.
+    // --input reads a file instead: a launcher such as Claude Code keeps any
+    // call with a redirect inside its sandbox, where no window can open, so the
+    // file has to be passed as an argument
+    let (buffer, is_default_data) = if let Some(path) = &args.input {
+        let buf = std::fs::read_to_string(path)
+            .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+        println!("Input data received ({} bytes)", buf.len());
+        if buf.trim().is_empty() {
+            return Err(format!("{} is empty", path.display()));
+        }
+        (buf, false)
+    } else if io::stdin().is_terminal() {
         println!("stdin is a terminal, using default data");
         (default_data_buffer(), true)
     } else {
@@ -339,6 +373,16 @@ pub fn run() {
         }
     };
 
+    // Shared with the startup watchdog, which gives up when the page never asks
+    // for its data
+    let page_loaded = Arc::new(AtomicBool::new(false));
+    let state_page_loaded = Arc::clone(&page_loaded);
+    // Started before Tauri is initialized, so a startup that stalls inside the
+    // GUI backend is caught as well
+    if let Some(timeout) = args.startup_timeout() {
+        lifecycle::spawn_startup_watchdog(page_loaded, timeout);
+    }
+
     let builder = tauri::Builder::default();
     // The default menu with "Third-Party Licenses" below About. macOS only: the
     // app is released for macOS, and elsewhere there is no menu bar to extend
@@ -365,6 +409,7 @@ pub fn run() {
             // Set up the application state
             app.manage(AppState {
                 data: Mutex::new(initial_data),
+                page_loaded: state_page_loaded,
             });
 
             build_main_window(app, theme_name, window_theme).inspect_err(|e| {
@@ -583,5 +628,54 @@ mod tests {
     fn license_is_off_unless_asked_for() {
         assert!(!args_from(&[]).license);
         assert!(args_from(&["--license"]).license);
+    }
+
+    #[test]
+    fn input_reads_a_file_instead_of_stdin() {
+        let path = std::env::temp_dir().join(format!(
+            "clipboard-palette-input-test-{}.json",
+            std::process::id()
+        ));
+        std::fs::write(&path, r#"[{"label": "A", "text": "a"}]"#).unwrap();
+        let args = args_from(&["--json", "--input", path.to_str().unwrap()]);
+        let data = super::read_stdin_data(&args);
+        std::fs::remove_file(&path).unwrap();
+        let data = data.unwrap();
+        assert_eq!(data.items.len(), 1);
+        assert_eq!(data.items[0].text, "a");
+        assert!(!data.is_default_data);
+    }
+
+    #[test]
+    fn input_rejects_an_empty_or_missing_file() {
+        let path = std::env::temp_dir().join(format!(
+            "clipboard-palette-input-empty-{}.json",
+            std::process::id()
+        ));
+        std::fs::write(&path, "  \n").unwrap();
+        let empty = super::read_stdin_data(&args_from(&["-i", path.to_str().unwrap()]));
+        std::fs::remove_file(&path).unwrap();
+        assert!(empty.is_err());
+        assert!(super::read_stdin_data(&args_from(&["-i", path.to_str().unwrap()])).is_err());
+    }
+
+    #[test]
+    fn startup_timeout_defaults_to_ten_seconds() {
+        assert_eq!(
+            args_from(&[]).startup_timeout(),
+            Some(std::time::Duration::from_secs(10))
+        );
+        assert_eq!(
+            args_from(&["--startup-timeout=30"]).startup_timeout(),
+            Some(std::time::Duration::from_secs(30))
+        );
+    }
+
+    #[test]
+    fn startup_timeout_zero_disables_the_watchdog() {
+        assert!(args_from(&["--startup-timeout", "0"])
+            .startup_timeout()
+            .is_none());
+        assert!(Args::try_parse_from(["clipboard-palette", "--startup-timeout=-1"]).is_err());
     }
 }
