@@ -177,6 +177,17 @@ Only single-line text counts. Other cards copy as usual, Shift or not.
 printf 'https://example.com\n~/Downloads\n' | clipboard-palette -m
 ```
 
+### Input file (--input)
+
+```shell
+clipboard-palette --json --input palette.json
+```
+
+Reads the text from a file instead of standard input. Useful when the launcher
+treats redirects specially: Claude Code keeps any call with a redirect or a pipe
+inside its sandbox, where the window cannot open, so a sandboxed agent has to
+pass the file as an argument. An empty file is an error rather than sample data.
+
 ### License (--license)
 
 ```shell
@@ -236,8 +247,9 @@ shown, but the process does not fail on its own: it just keeps running with
 nothing on screen. To make that visible, the app exits with status 1 when the
 page has not loaded within 10 seconds, printing `startup failed` and
 `exit: reason=startup-timeout` on stdout and a hint on stderr. Run the command
-outside the sandbox (for Claude Code, add `clipboard-palette` to
-`sandbox.excludedCommands`).
+outside the sandbox: for Claude Code, add `clipboard-palette *` to
+`sandbox.excludedCommands` and launch it as a plain command with `--input`
+(a call with a redirect, a pipe or `$(...)` stays sandboxed even when it matches).
 
 ```shell
 echo "Hello" | clipboard-palette --startup-timeout=30   # wait longer on a slow machine

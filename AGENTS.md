@@ -45,6 +45,9 @@ clipboard-palette/
 - `--split-empty-line[=N]` / `-s [N]`: N行以上の空行で分割（デフォルト1）
 - `--json` / `-j`: JSON形式で解析
 - `--theme=auto|light|dark`: カラーテーマの指定 (デフォルト auto = OS 設定に従う)。ウィンドウ内容とタイトルバーの両方に適用される
+- `--input <FILE>` / `-i`: 標準入力の代わりにファイルから読む。空ファイルはエラー (サンプルデータにしない)。
+  Claude Code はリダイレクト・パイプ・`$(...)` を含む呼び出しを excludedCommands に一致してもサンドボックス内で
+  動かすため、サンドボックス外で起動させるにはファイルを引数で渡す必要がある (CYBERNEURA-DEV-1087)
 - `--license`: アプリ自身の MIT ライセンスと `THIRD-PARTY-NOTICES.txt` を stdout に出して終了する (stdin を読まず、ウィンドウも出さない)
 
 ### データ処理モード

@@ -118,6 +118,7 @@ EXAMPLES:
   echo '[{"label":"Greeting","text":"Hello"}]' | clipboard-palette --json
   pbpaste | clipboard-palette -m
   echo "Hello, World!" | clipboard-palette --theme=dark
+  clipboard-palette --json --input palette.json
 
 THEME:
   The window content and the title bar follow the OS setting by default.
@@ -144,6 +145,10 @@ struct Args {
         value_name = "THEME"
     )]
     theme: ThemeArg,
+
+    /// Read the text from FILE instead of standard input
+    #[arg(short = 'i', long = "input", value_name = "FILE")]
+    input: Option<std::path::PathBuf>,
 
     /// Print the license and the third-party license notices, then exit
     #[arg(long = "license")]
@@ -189,8 +194,19 @@ fn default_data_buffer() -> String {
 
 fn read_stdin_data(args: &Args) -> Result<AppData, String> {
     // When stdin is a TTY (launched straight from a terminal) do not read it and
-    // use the sample data instead. is_default_data records that substitution
-    let (buffer, is_default_data) = if io::stdin().is_terminal() {
+    // use the sample data instead. is_default_data records that substitution.
+    // --input reads a file instead: a launcher such as Claude Code keeps any
+    // call with a redirect inside its sandbox, where no window can open, so the
+    // file has to be passed as an argument
+    let (buffer, is_default_data) = if let Some(path) = &args.input {
+        let buf = std::fs::read_to_string(path)
+            .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+        println!("Input data received ({} bytes)", buf.len());
+        if buf.trim().is_empty() {
+            return Err(format!("{} is empty", path.display()));
+        }
+        (buf, false)
+    } else if io::stdin().is_terminal() {
         println!("stdin is a terminal, using default data");
         (default_data_buffer(), true)
     } else {
@@ -612,6 +628,35 @@ mod tests {
     fn license_is_off_unless_asked_for() {
         assert!(!args_from(&[]).license);
         assert!(args_from(&["--license"]).license);
+    }
+
+    #[test]
+    fn input_reads_a_file_instead_of_stdin() {
+        let path = std::env::temp_dir().join(format!(
+            "clipboard-palette-input-test-{}.json",
+            std::process::id()
+        ));
+        std::fs::write(&path, r#"[{"label": "A", "text": "a"}]"#).unwrap();
+        let args = args_from(&["--json", "--input", path.to_str().unwrap()]);
+        let data = super::read_stdin_data(&args);
+        std::fs::remove_file(&path).unwrap();
+        let data = data.unwrap();
+        assert_eq!(data.items.len(), 1);
+        assert_eq!(data.items[0].text, "a");
+        assert!(!data.is_default_data);
+    }
+
+    #[test]
+    fn input_rejects_an_empty_or_missing_file() {
+        let path = std::env::temp_dir().join(format!(
+            "clipboard-palette-input-empty-{}.json",
+            std::process::id()
+        ));
+        std::fs::write(&path, "  \n").unwrap();
+        let empty = super::read_stdin_data(&args_from(&["-i", path.to_str().unwrap()]));
+        std::fs::remove_file(&path).unwrap();
+        assert!(empty.is_err());
+        assert!(super::read_stdin_data(&args_from(&["-i", path.to_str().unwrap()])).is_err());
     }
 
     #[test]
