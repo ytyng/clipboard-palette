@@ -151,8 +151,11 @@ pub fn log_page_loaded(page_loaded: &AtomicBool) -> bool {
 /// what may not be reachable.
 pub fn spawn_startup_watchdog(page_loaded: Arc<AtomicBool>, timeout: Duration) {
     std::thread::spawn(move || {
-        let deadline = Instant::now() + timeout;
-        while Instant::now() < deadline {
+        // Compared through elapsed() rather than a deadline: Instant + a huge
+        // --startup-timeout would overflow and panic, and a panic here only
+        // kills this thread, leaving the app running without its watchdog
+        let started = Instant::now();
+        while started.elapsed() < timeout {
             if page_loaded.load(Ordering::SeqCst) {
                 return;
             }
