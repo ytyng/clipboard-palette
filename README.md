@@ -205,6 +205,7 @@ A successful run:
 [lifecycle] window created: label=main
 [lifecycle] window state: label=main visible=true minimized=false focused=true position=560,320 size=400x600
 [lifecycle] startup ok: window is visible
+[lifecycle] page loaded
 ```
 
 | Line | Meaning |
@@ -216,7 +217,9 @@ A successful run:
 | `window state: ...` | Measured once the event loop is ready. `visible` is the window's visibility flag, so it says the window was put on screen, not that a compositor has drawn it |
 | `startup ok: window is visible` | **The window is on screen.** This is the line to check for |
 | `startup incomplete: ...` | The window was built but is not visible, is minimized, or its state could not be read. Anything short of a confirmed yes lands here |
-| `startup failed: ...` | The window could not be built |
+| `page loaded` | The page in the window called into the app to fetch its data, so the web view is running. It does not say the window is on screen; check it together with `startup ok` |
+| `startup failed: ...` | The window could not be built, or the page did not load in time (below) |
+| `exit: reason=startup-timeout code=1` | The page did not load within `--startup-timeout` seconds and the app gave up with exit status 1 |
 | `exit: reason=panic message=...` | The app died before or during startup, for example because the GUI backend would not start |
 | `window close requested: label=main` | The user closed the window |
 | `exit requested: code=...` / `exit: reason=normal` | The event loop ended on its own terms |
@@ -226,10 +229,30 @@ A run that stops without any `exit:` line was killed without a chance to clean
 up (SIGKILL, or the machine going away). SIGKILL cannot be caught, so its
 absence is the only signal there is.
 
+### Startup timeout (--startup-timeout)
+
+Inside a sandbox such as Claude Code's (macOS Seatbelt) the window cannot be
+shown, but the process does not fail on its own: it just keeps running with
+nothing on screen. To make that visible, the app exits with status 1 when the
+page has not loaded within 10 seconds, printing `startup failed` and
+`exit: reason=startup-timeout` on stdout and a hint on stderr. Run the command
+outside the sandbox (for Claude Code, `/sandbox` and exclude
+`clipboard-palette`, or add it to `excludedCommands`).
+
+```shell
+echo "Hello" | clipboard-palette --startup-timeout=30   # wait longer on a slow machine
+echo "Hello" | clipboard-palette --startup-timeout=0    # never give up
+```
+
+The window flags (`startup ok`) are read from the app's own state, so they may
+still say `visible=true` in that situation. Treat a run as good only when both
+`startup ok` and `page loaded` are printed.
+
 Checking the outcome from a script:
 
 ```shell
-if printf '%s' "$output" | grep -q '^\[lifecycle\] startup ok:'; then
+if printf '%s' "$output" | grep -q '^\[lifecycle\] startup ok:' &&
+   printf '%s' "$output" | grep -q '^\[lifecycle\] page loaded$'; then
   echo "the palette is on screen"
 fi
 ```

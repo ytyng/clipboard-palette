@@ -4,7 +4,9 @@ mod open_target;
 
 use serde::{Deserialize, Serialize};
 use std::io::{self, IsTerminal, Read};
-use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tauri::{App, Manager, RunEvent, State, Theme, WebviewWindowBuilder};
 use clap::{Parser, ValueEnum};
 
@@ -69,6 +71,9 @@ pub struct AppData {
 
 pub struct AppState {
     pub data: Mutex<Option<AppData>>,
+    /// Set once the main page has asked for its data; read by the startup
+    /// watchdog
+    pub page_loaded: Arc<AtomicBool>,
 }
 
 #[derive(Parser)]
@@ -143,11 +148,24 @@ struct Args {
     /// Print the license and the third-party license notices, then exit
     #[arg(long = "license")]
     license: bool,
+
+    /// Exit with status 1 if the window has not loaded within SECONDS
+    /// (it never does inside a sandbox). 0 waits forever
+    #[arg(long = "startup-timeout", value_name = "SECONDS", default_value_t = 10)]
+    startup_timeout: u64,
+}
+
+impl Args {
+    /// How long the startup watchdog waits for the page. None disables it
+    fn startup_timeout(&self) -> Option<Duration> {
+        (self.startup_timeout > 0).then(|| Duration::from_secs(self.startup_timeout))
+    }
 }
 
 #[tauri::command]
 fn get_clipboard_data(state: State<AppState>) -> Result<AppData, String> {
     println!("get_clipboard_data called");
+    lifecycle::log_page_loaded(&state.page_loaded);
     let data = state.data.lock().unwrap();
 
     match &*data {
@@ -339,6 +357,16 @@ pub fn run() {
         }
     };
 
+    // Shared with the startup watchdog, which gives up when the page never asks
+    // for its data
+    let page_loaded = Arc::new(AtomicBool::new(false));
+    let state_page_loaded = Arc::clone(&page_loaded);
+    // Started before Tauri is initialized, so a startup that stalls inside the
+    // GUI backend is caught as well
+    if let Some(timeout) = args.startup_timeout() {
+        lifecycle::spawn_startup_watchdog(page_loaded, timeout);
+    }
+
     let builder = tauri::Builder::default();
     // The default menu with "Third-Party Licenses" below About. macOS only: the
     // app is released for macOS, and elsewhere there is no menu bar to extend
@@ -365,6 +393,7 @@ pub fn run() {
             // Set up the application state
             app.manage(AppState {
                 data: Mutex::new(initial_data),
+                page_loaded: state_page_loaded,
             });
 
             build_main_window(app, theme_name, window_theme).inspect_err(|e| {
@@ -583,5 +612,25 @@ mod tests {
     fn license_is_off_unless_asked_for() {
         assert!(!args_from(&[]).license);
         assert!(args_from(&["--license"]).license);
+    }
+
+    #[test]
+    fn startup_timeout_defaults_to_ten_seconds() {
+        assert_eq!(
+            args_from(&[]).startup_timeout(),
+            Some(std::time::Duration::from_secs(10))
+        );
+        assert_eq!(
+            args_from(&["--startup-timeout=30"]).startup_timeout(),
+            Some(std::time::Duration::from_secs(30))
+        );
+    }
+
+    #[test]
+    fn startup_timeout_zero_disables_the_watchdog() {
+        assert!(args_from(&["--startup-timeout", "0"])
+            .startup_timeout()
+            .is_none());
+        assert!(Args::try_parse_from(["clipboard-palette", "--startup-timeout=-1"]).is_err());
     }
 }

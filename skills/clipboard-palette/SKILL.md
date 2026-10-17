@@ -32,7 +32,7 @@ not end up indexed, backed up or committed.
 PALETTE=$(mktemp -t palette).json; LOG="$PALETTE.log"   # unique per launch
 # ... write the JSON to "$PALETTE" with a file-writing tool ...
 clipboard-palette --json < "$PALETTE" > "$LOG" 2>&1 &
-for _ in $(seq 1 30); do grep -q '\[lifecycle\] \(startup\|exit\)' "$LOG" && break; sleep 0.5; done
+for _ in $(seq 1 30); do grep -q '\[lifecycle\] \(page loaded\|startup failed\|exit\)' "$LOG" && break; sleep 0.5; done
 cat "$LOG"; rm -f "$PALETTE"
 ```
 
@@ -50,9 +50,13 @@ cat "$LOG"; rm -f "$PALETTE"
   rejected and the window shows only an error; `Empty input detected, using
   default data` (or `stdin is a terminal`) means the app fell back to its two
   sample buttons, and the success line that follows it is about those.
-  `[lifecycle] startup ok: window is visible` means the palette is on screen;
+  `[lifecycle] startup ok: window is visible` together with
+  `[lifecycle] page loaded` (the page reached the app) means the palette is
+  on screen and working;
   `startup incomplete` / `startup failed` / `exit:` lines mean it is not, and
   no verdict after the 15-second poll above is a timeout to report as such.
+  The app gives up by itself (exit status 1) when the page has not loaded
+  within 10 seconds (`--startup-timeout`).
   Announce the palette only when both are good; otherwise report what the log
   says.
 - Then tell the user the palette is open and what each button is; the window
@@ -66,6 +70,14 @@ Other modes, for input that needs no labels: `-m` (one button per line),
 button). Only the first of `-m`, `-s`, `-j` applies if several are given.
 
 ## Notes
+
+- It cannot open a window from inside a sandbox (Claude Code's sandbox, macOS
+  Seatbelt): the log shows `Connection Invalid error for service
+  com.apple.hiservices-xpcservice`, then `startup failed: the page did not
+  load ...` and `exit: reason=startup-timeout`. Run it with the sandbox
+  disabled for that command (Claude Code: exclude `clipboard-palette` with
+  `/sandbox`, or add it to `sandbox.excludedCommands`) and tell the user why if
+  you cannot.
 
 - Input must come through a pipe or redirect. With stdin on a terminal, or empty
   input, the app shows sample data instead.

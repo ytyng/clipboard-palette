@@ -9,6 +9,9 @@
 use std::io::Write;
 #[cfg(all(desktop, unix))]
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager, Runtime, WindowEvent};
 
 /// Prefix shared by every lifecycle line, so a caller can select them with a
@@ -117,6 +120,65 @@ pub fn log_window_state<R: Runtime>(app: &AppHandle<R>, label: &str) {
             e
         )),
     }
+}
+
+/// Exit status of a run whose page never loaded (see [`spawn_startup_watchdog`]).
+pub const STARTUP_TIMEOUT_EXIT_CODE: i32 = 1;
+
+/// Log that the page in the main window asked for its data, i.e. the web view
+/// is actually running. Returns true only for the first call, so a reload does
+/// not log it again.
+pub fn log_page_loaded(page_loaded: &AtomicBool) -> bool {
+    if page_loaded.swap(true, Ordering::SeqCst) {
+        return false;
+    }
+    log("page loaded");
+    true
+}
+
+/// End the process when the page has not loaded within `timeout`.
+///
+/// Inside a sandbox such as Claude Code's (macOS Seatbelt) the connections the
+/// window needs are refused: nothing shows up, yet the process neither fails
+/// nor exits, so a caller waiting in the background cannot tell it apart from
+/// a palette the user has not looked at. The window flags cannot catch this,
+/// because they are read from the app's own state, so the check is on the page
+/// itself having started — something that only happens once the web view runs.
+///
+/// Runs on its own thread and never touches the main thread, so it still fires
+/// when the event loop is stuck. Only the stdout line and a hint on stderr are
+/// written before the exit, since cleanup through the event loop is exactly
+/// what may not be reachable.
+pub fn spawn_startup_watchdog(page_loaded: Arc<AtomicBool>, timeout: Duration) {
+    std::thread::spawn(move || {
+        let deadline = Instant::now() + timeout;
+        while Instant::now() < deadline {
+            if page_loaded.load(Ordering::SeqCst) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        if page_loaded.load(Ordering::SeqCst) {
+            return;
+        }
+        let seconds = timeout.as_secs();
+        log(&format!(
+            "startup failed: the page did not load within {} seconds",
+            seconds
+        ));
+        log(&format!(
+            "exit: reason=startup-timeout code={}",
+            STARTUP_TIMEOUT_EXIT_CODE
+        ));
+        eprintln!(
+            "clipboard-palette: the window did not come up within {} seconds, giving up. \
+If this was run inside a sandbox (for example Claude Code's), the sandbox blocks the window; \
+run it outside the sandbox (exclude clipboard-palette from it). \
+Use --startup-timeout to wait longer, or 0 to never give up.",
+            seconds
+        );
+        std::process::exit(STARTUP_TIMEOUT_EXIT_CODE);
+    });
 }
 
 /// Log the window events that tell the exit reason apart. Focus, resize and
@@ -304,7 +366,15 @@ fn is_same_program(exe_name: &str, command: &str) -> bool {
 
 #[cfg(all(test, desktop, unix))]
 mod tests {
-    use super::{is_same_program, other_pids_from_ps};
+    use super::{is_same_program, log_page_loaded, other_pids_from_ps};
+    use std::sync::atomic::AtomicBool;
+
+    #[test]
+    fn page_loaded_is_reported_once() {
+        let page_loaded = AtomicBool::new(false);
+        assert!(log_page_loaded(&page_loaded));
+        assert!(!log_page_loaded(&page_loaded));
+    }
 
     #[test]
     fn matches_the_full_path_reported_by_macos() {
