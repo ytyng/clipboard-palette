@@ -128,16 +128,16 @@ tap 用の token (`HOMEBREW_TAP_TOKEN`) はもう使わない。
 Release の dmg をダウンロードして実機確認する。
 
 ```shell
-DMG=clipboard-palette_X.Y.Z_universal.dmg
+DMG=Clipboard-palette_X.Y.Z_universal.dmg
 spctl -a -vv -t open --context context:primary-signature "$DMG"   # accepted / source=Notarized Developer ID
 xcrun stapler validate "$DMG"        # The validate action worked!
 hdiutil attach -nobrowse -quiet "$DMG"
-APP=/Volumes/clipboard-palette/clipboard-palette.app
+APP=/Volumes/Clipboard-palette/Clipboard-palette.app
 codesign -dv --verbose=2 "$APP"      # Authority=Developer ID Application: ... / flags=...runtime
 spctl -a -vvv "$APP"                 # accepted / source=Notarized Developer ID
 xcrun stapler validate "$APP"        # The validate action worked!
 lipo -archs "$APP/Contents/MacOS/clipboard-palette"   # x86_64 arm64
-hdiutil detach -quiet /Volumes/clipboard-palette
+hdiutil detach -quiet /Volumes/Clipboard-palette
 ```
 
 Homebrew 側は (tap の次の毎時 run が成功した後に) cask の version / sha256 が新しい

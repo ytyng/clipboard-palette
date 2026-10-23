@@ -21,7 +21,7 @@ The cask installs the app and links the `clipboard-palette` command onto your
 
 ### Manual download
 
-Get the latest `clipboard-palette_<version>_universal.dmg` from the
+Get the latest `Clipboard-palette_<version>_universal.dmg` from the
 [Releases page](https://github.com/ytyng/clipboard-palette/releases).
 It is a universal binary (Intel + Apple Silicon), signed with a Developer ID
 certificate and notarized by Apple, so it opens without a Gatekeeper warning.
@@ -30,7 +30,7 @@ This app reads from standard input, so it is meant to be launched from a shell.
 After dragging it to `/Applications`, link the binary onto your `PATH`:
 
 ```shell
-sudo ln -s /Applications/clipboard-palette.app/Contents/MacOS/clipboard-palette \
+sudo ln -s /Applications/Clipboard-palette.app/Contents/MacOS/clipboard-palette \
   /usr/local/bin/clipboard-palette
 ```
 
