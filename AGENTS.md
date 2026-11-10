@@ -214,3 +214,13 @@ pnpm tauri build
 - Rust コードは標準的な Rust スタイルに従う
 - 空行のみの行は作成しない
 - ソースコード内のコメントは英語で記述する
+
+## macOS アプリアイコン
+
+`bash scripts/generate-macos-icons.sh` で固定原画像と `layout.json` から生成する。
+小さい @1x は背景全面・図柄を中央80%、大サイズは背景外側に四辺10%の透明余白。
+16pt @2x と32pt @1xは別画像。小サイズICNSはARGB、大サイズを先頭に並べる。
+`tauri.macos.conf.json` で Assets.car を Resources 直下へ置き、Info.plist の
+CFBundleIconName で登録する。CLI直接起動時は `set_dock_icon` がICNSを埋め込んで使う。
+描画検証は `swift scripts/macos-icon.swift verify resources/app-icons/AppIcon.iconset src-tauri/icons ClipboardPalette`。
+原画像・登録・検証の詳細は `resources/app-icons/README.md`。Windows/Web用PNG・ICOは別素材として維持する。

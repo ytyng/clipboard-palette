@@ -61,6 +61,12 @@ pnpm tauri build
 The built executable will be created at `src-tauri/target/release/clipboard-palette`.
 A local build is ad-hoc signed (`signingIdentity: "-"`), so it is not distributable.
 
+### macOS app icons
+
+Run `bash scripts/generate-macos-icons.sh` to rebuild the size-specific ICNS and
+asset catalog from the fixed original artwork. See
+[the icon generation and native verification guide](resources/app-icons/README.md).
+
 ### Publish a Release
 
 Releases follow the version in `src-tauri/tauri.conf.json` on `main`: every push

@@ -605,6 +605,9 @@ version = "0.4.1"
 dependencies = [
  "clap",
  "libc",
+ "objc2 0.6.4",
+ "objc2-app-kit",
+ "objc2-foundation 0.3.1",
  "serde",
  "serde_json",
  "tauri",
@@ -2257,9 +2260,15 @@ checksum = "e6f29f568bec459b0ddff777cec4fe3fd8666d82d5a40ebd0ff7e66134f89bcc"
 dependencies = [
  "bitflags 2.9.1",
  "block2 0.6.1",
+ "libc",
  "objc2 0.6.4",
+ "objc2-cloud-kit",
+ "objc2-core-data",
  "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-core-image",
  "objc2-foundation 0.3.1",
+ "objc2-quartz-core 0.3.1",
 ]
 
 [[package]]
@@ -2279,6 +2288,7 @@ version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "291fbbf7d29287518e8686417cf7239c74700fd4b607623140a7d4a3c834329d"
 dependencies = [
+ "bitflags 2.9.1",
  "objc2 0.6.4",
  "objc2-foundation 0.3.1",
 ]
@@ -2362,6 +2372,7 @@ checksum = "900831247d2fe1a09a683278e5384cfb8c80c79fe6b166f9d14bfdde0ea1b03c"
 dependencies = [
  "bitflags 2.9.1",
  "block2 0.6.1",
+ "libc",
  "objc2 0.6.4",
  "objc2-core-foundation",
 ]
