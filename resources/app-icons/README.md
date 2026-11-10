@@ -31,3 +31,9 @@ container compatibility; this does not add detail to the original design.
 
 CLI startup also loads the embedded ICNS into NSApplication, so a bare executable
 uses the same larger-size artwork as the packaged app.
+
+Artwork is decoded with ImageIO, preserving embedded profiles, and drawn into
+explicit sRGB buffers. PNG export must retain an sRGB chunk; avoid a PNG
+encode/decode round trip through NSBitmapImageRep, which can re-export
+`gAMA=2.2` and make dark colors pale in other decoders. The shared helper rejects
+missing sRGB or conflicting gamma/ICC metadata before native verification.
