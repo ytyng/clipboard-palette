@@ -9,11 +9,41 @@ let slots: [(type: String, pt: Int, scale: Int)] = [
     ("ic12", 32, 2), ("ic11", 16, 2), ("ic05", 32, 1), ("ic04", 16, 1)
 ]
 
+// Inspect the PNG metadata independently of AppKit. AppKit-to-AppKit pixel
+// comparisons can miss gAMA=2.2, which other decoders display too brightly.
+func validatePNGColorSpace(_ data: Data, name: String) throws {
+    guard data.prefix(8) == Data([137, 80, 78, 71, 13, 10, 26, 10]) else {
+        throw IconError("Expected PNG: \(name)")
+    }
+    var offset = 8
+    var srgb = false
+    while offset < data.count {
+        guard data.count - offset >= 12 else { throw IconError("Truncated PNG: \(name)") }
+        let length = data[offset..<offset + 4].reduce(0) { ($0 << 8) | Int($1) }
+        guard length <= data.count - offset - 12 else { throw IconError("Truncated PNG chunk: \(name)") }
+        let type = String(decoding: data[offset + 4..<offset + 8], as: UTF8.self)
+        let payload = data.subdata(in: offset + 8..<offset + 8 + length)
+        if type == "sRGB" {
+            guard length == 1, payload[0] <= 3 else { throw IconError("Invalid sRGB chunk: \(name)") }
+            srgb = true
+        } else if type == "gAMA" {
+            guard payload == Data([0, 0, 177, 143]) else {
+                throw IconError("Conflicting PNG gamma; export sRGB (gAMA 45455), not display gamma 2.2: \(name)")
+            }
+        } else if type == "iCCP" {
+            throw IconError("Convert artwork to sRGB before export; do not mix ICC and sRGB tags: \(name)")
+        }
+        offset += length + 12
+    }
+    guard srgb else { throw IconError("Missing explicit sRGB PNG tag: \(name)") }
+}
+
 func sourceEntries() throws -> [Entry] {
     try slots.map { slot in
         let suffix = slot.scale == 2 ? "@2x" : ""
         let file = inputDirectory.appendingPathComponent("icon_\(slot.pt)x\(slot.pt)\(suffix).png")
         let data = try Data(contentsOf: file)
+        try validatePNGColorSpace(data, name: file.lastPathComponent)
         let pixels = slot.pt * slot.scale
         guard let b = NSBitmapImageRep(data: data), b.pixelsWide == pixels, b.pixelsHigh == pixels,
               b.hasAlpha else { throw IconError("Expected \(pixels)x\(pixels) PNG with alpha: \(file.path)") }
@@ -139,8 +169,8 @@ func argb(_ data: Data, size: Int) throws -> Data {
             }
         }
     }
-    // Encode each ARGB plane as RLE literal chunks of up to 128 bytes.
-    // Use unpremultiplied components; PNG icp4/icp5 corrupt native small rendering.
+    // RLE-encode each ARGB plane in literal runs of at most 128 bytes.
+    // Use unpremultiplied colors; icp4 / icp5 PNGs can render incorrectly in IconServices.
     var body = Data("ARGB".utf8)
     for plane in planes {
         for start in stride(from: 0, to: plane.count, by: 128) {
@@ -157,6 +187,7 @@ func render(_ image: NSImage?, icon: IconRef? = nil, size: Int, scale: Int = 1) 
     let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels,
         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
         colorSpaceName: .deviceRGB, bytesPerRow: pixels * 4, bitsPerPixel: 32)!
+        .retagging(with: .sRGB)!
     bitmap.bitmapData!.initialize(repeating: 0, count: bitmap.bytesPerRow * pixels)
     bitmap.size = NSSize(width: size, height: size)
     NSGraphicsContext.saveGraphicsState()
@@ -179,7 +210,7 @@ func verify(_ path: URL, entries: [Entry]) throws {
     let fm = FileManager.default
     let data = try Data(contentsOf: path)
     var icon: IconRef?
-    // Exercise the legacy native decoder that exposed corruption missed by ImageIO;
+    // This deprecated API exercises the decoder that exposed small-icon corruption;
     // unlike NSWorkspace this does not depend on app-icon framing or caching.
     let status = data.withUnsafeBytes { raw in
         GetIconRefFromIconFamilyPtr(UnsafePointer(OpaquePointer(raw.baseAddress!)), data.count, &icon)
