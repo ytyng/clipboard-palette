@@ -1,131 +1,130 @@
-# リリース (GitHub Actions ビルド + 署名 + 公証 + Homebrew cask)
+# Release (GitHub Actions build + signing + notarization + Homebrew cask)
 
-macOS 向けの universal dmg を GitHub Actions でビルドし、Developer ID で署名 +
-Apple の公証 (notarization) + staple まで通して GitHub Release に公開する。
-公証と staple は中の `.app` と dmg の両方に行う。
-Homebrew tap ([ytyng/homebrew-tap](https://github.com/ytyng/homebrew-tap)) の
-`Casks/clipboard-palette.rb` は tap 側の workflow が毎時、公開済みの最新 Release を
-見に来て書き換える。このリポジトリから tap へ push はしない。
+A universal dmg for macOS is built on GitHub Actions, signed with Developer ID,
+taken all the way through Apple notarization + staple, and published to a GitHub Release.
+Notarization and stapling are applied to both the `.app` inside and the dmg.
+`Casks/clipboard-palette.rb` in the Homebrew tap ([ytyng/homebrew-tap](https://github.com/ytyng/homebrew-tap))
+is rewritten by a workflow on the tap side that checks the latest published Release every hour.
+This repository does not push to the tap.
 
-## 使い方
+## Usage
 
 ```shell
-pnpm release           # 0.1.0 -> 0.1.1 (patch, 既定)
+pnpm release           # 0.1.0 -> 0.1.1 (patch, default)
 pnpm release minor     # 0.1.0 -> 0.2.0
 pnpm release major     # 0.1.0 -> 1.0.0
 ```
 
-`scripts/release.sh` が以下を行う。
+`scripts/release.sh` does the following.
 
-1. `main` ブランチ・クリーンな作業ツリー・`HEAD == origin/main` を検証
-2. `src-tauri/tauri.conf.json` の version を採番し、`package.json` にも同じ version を反映
-   (pnpm-lock.yaml は自パッケージの version を持たないので触らない)
-3. `chore: release vX.Y.Z` を commit して `main` に push
-4. その push で始まった run を (head SHA で) 見つけて完了まで watch
+1. Verifies the `main` branch, a clean working tree, and `HEAD == origin/main`
+2. Assigns the new version in `src-tauri/tauri.conf.json` and applies the same version to `package.json`
+   (pnpm-lock.yaml does not hold the package's own version, so it is not touched)
+3. Commits `chore: release vX.Y.Z` and pushes it to `main`
+4. Finds the run started by that push (by head SHA) and watches it until it completes
 
-リリースを始めるのは push であってスクリプトではない。`tauri.conf.json` の version を
-手で変えて push しても同じことが起きる。
+What starts a release is the push, not the script. Changing the version in `tauri.conf.json`
+by hand and pushing does the same thing.
 
-version の反映は 2 ファイルの該当フィールドを直接書き換える (JSON 全体を再整形しない)。
+The version is applied by rewriting the relevant field of the 2 files directly (the whole JSON is not reformatted).
 
-## 中核: 「version が変わったか」ではなく「その version が公開済みか」で決める
+## Core idea: decide by "is that version already published", not "did the version change"
 
-`release.yml` は `main` への push ごとに起動し、`plan` ジョブが
-`GET /repos/{repo}/releases/tags/v<version>` を叩く。
+`release.yml` runs on every push to `main`, and the `plan` job calls
+`GET /repos/{repo}/releases/tags/v<version>`.
 
-- 404 → 未公開。`test` → `build` → `publish` が走る。
-- 200 → 公開済み。何もしない (version を変えない push は checkout と API 1 回で終わる)。
-- それ以外 (rate limit / 障害) → 判定不能として **失敗させる**。未公開と読むと、公開済みの
-  version をもう一度ビルドして publish しにいく。
+- 404 → not published. `test` → `build` → `publish` run.
+- 200 → already published. Nothing happens (a push that does not change the version finishes with a checkout and one API call).
+- Anything else (rate limit / outage) → undeterminable, so it **fails**. Reading it as unpublished would rebuild and
+  try to publish an already published version.
 
-diff を見ないので、squash / rebase / 直 push のどれで着地しても結果は同じ (冪等)。
-`paths: [src-tauri/tauri.conf.json]` で絞らないのも同じ理由で、ビルドや workflow の
-不具合で失敗したリリースを「原因を直して push」で再試行できるようにするため
-(その修正は version を触らない)。**失敗しても version を上げ直さない**。
+Since it does not look at the diff, the result is the same whether the change lands via squash, rebase, or a direct push (idempotent).
+It is not narrowed with `paths: [src-tauri/tauri.conf.json]` for the same reason: so that a release that failed because of a build or workflow
+bug can be retried by "fix the cause and push"
+(that fix does not touch the version). **Do not bump the version again after a failure**.
 
-`workflow_dispatch` は「version は正しいのに run が一時障害で落ちた」時の再実行用で、
-同じ判定を通るため公開済みの version をもう一度出すことはできない。`main` 以外の ref
-からの dispatch は plan の冒頭で拒否する (未公開 version を載せたブランチの内容で
-リリースされないように)。
+`workflow_dispatch` is for rerunning when "the version is right but the run failed due to a transient outage".
+It goes through the same check, so it cannot publish an already published version again. Dispatches from refs other than `main`
+are rejected at the start of plan (so that a release is not made from the contents of a branch carrying an unpublished version).
 
-## 構成上の判断 (なぜこうなっているか)
+## Design decisions (why it is this way)
 
-- **build は tauri CLI を直接実行し、dmg の公証とアップロードを別ステップにする**。
-  `APPLE_*` を渡すと tauri CLI は `.app` に署名 + 公証 + staple をし、dmg には
-  署名だけをする。dmg を公証しないと、ダウンロードした dmg が
-  `spctl -a -t open --context context:primary-signature` で
-  `rejected / source=Unnotarized Developer ID` になる (v0.3.0 まではこの状態)。
-  tauri-action はビルドとアップロードを 1 ステップで行い、その間に dmg の公証を
-  挟めないので使わない。dmg は `notarytool submit --wait` (exit code と
-  `status: Accepted` の両方で判定し、失敗時は `notarytool log` を出す) →
-  `stapler staple` → `stapler validate` → `spctl --type open` の順に通す。
-- **draft → publish の 2 段構え**。build の最後のステップが `v<version>` の
-  Release を draft で作って (ある draft は使い回し、この run の commit に向け直す)
-  dmg を ID 指定で上げ、ビルドが全て成功した後に `publish` ジョブが
-  `gh release edit --draft=false` で公開する。将来 Windows leg を matrix に
-  足した時、片方だけ成功した不完全な Release が公開されるのを防ぐ。再実行では
-  同名の asset を消してから上げ直す。同じ tag の Release が公開済みなら何もせず失敗する。
-- **PR では test だけが走る**。`plan` が `pull_request` で skipped になり、`build` /
-  `publish` は道連れで skipped になる。`test` は `!cancelled()` で自動スキップを外し、
-  PR か「リリースする version」の時だけ走る (version を変えない main への push で
-  macOS ランナーを動かさない)。
-- **`test` で Tauri の crate と npm パッケージの major.minor を突き合わせる**
-  (`scripts/check-tauri-versions.mjs`)。`tauri build` はこれがずれているとビルド前に
-  止まるが、PR の `test` は `tauri build` を走らせないので、片側だけの依存更新が
-  リリースの build で初めて落ちる (v0.1.2 はこれで公開されなかった)。依存を
-  上げる時は `tauri` ↔ `@tauri-apps/api`、`tauri-plugin-*` ↔ `@tauri-apps/plugin-*`
-  を揃えて上げる。
-- **コマンド名は `release`**。`publish` は npm/pnpm 組み込みコマンドと衝突する。
-- **`pnpm exec tauri build`** で CLI を直接叩く (`pnpm tauri build` ではなく)。
-  `package.json` の `tauri` スクリプトに `APPLE_SIGNING_IDENTITY='...' tauri` の
-  ようなインライン代入を足した瞬間に、workflow から渡した env が黙って上書きされる
-  (シェルのインライン代入は継承 env より強い)。CLI を直接叩けば Secret 側が唯一の正になる。
-- **`concurrency` は `cancel-in-progress: false` + `queue: max`**。1 push =
-  1 version なので、run がキャンセルされるとその version の公開が遅れる
-  (bump コミットは main に載ったまま)。既定の `queue: single` は pending を 1 件
-  しか保持せず新しい push が既存の pending を潰すため、`queue: max` が要る。
-  PR の run は commit ごとに別グループにして、リリースのキューに並ばせない。
-- **`uses:` は全て commit SHA 固定**。Apple の秘密鍵入り証明書を扱うジョブなので、
-  タグが差し替えられると secrets を抜かれる。更新時は行末の `# v4` コメントを
-  頼りに新しい SHA を調べる。`dtolnay/rust-toolchain` は **master 履歴**の SHA を
-  pin すること (`stable` ブランチ先端の SHA は将来 GC されて run が落ちる)。
-- **`persist-credentials: false`**。write 権限の `GITHUB_TOKEN` を `.git/config`
-  に残さない (`pnpm install` の install script や third-party action から拾えてしまう)。
-- **フロントエンドのビルドを Secret の無いステップに分離する**。`tauri build` は
-  `beforeBuildCommand` (`pnpm build`) を子プロセスとして起動し、子プロセスは
-  環境変数を継承する。分離しないと vite とその依存パッケージが `APPLE_PASSWORD`
-  を読める環境で動くことになり、悪意ある依存が 1 つ混ざるだけで持ち出せてしまう。
-  署名ビルド側は `src-tauri/tauri.ci.conf.json` を `--config` で重ねて
-  `beforeBuildCommand` を空にし、二重ビルドを避ける。
-- **ローカルは ad-hoc 署名のまま**。`tauri.conf.json` に `signingIdentity: "-"` を
-  残しておくと、env の無いローカルビルドは ad-hoc、CI は `APPLE_SIGNING_IDENTITY`
-  が config を上書きして Developer ID で署名する (tauri-cli の優先順位 env > config)。
-- **Homebrew cask は tap 側から更新する (プロジェクト側から push しない)**。
-  プロジェクトから tap へ push する形だと、tap に書ける token を全プロジェクトに
-  配ることになる。tap 側から聞きに行けば、Actions が自分のリポジトリに対して持つ
-  `GITHUB_TOKEN` だけで済み、新しい secret はゼロ。代償は次の毎時 run までの遅れだけ。cask には `binary` stanza が入っており、`brew install` だけで実行ファイルが
-  Homebrew の bin にリンクされる (手動の `ln -s` は不要になる)。
+- **build runs the tauri CLI directly, and notarizing and uploading the dmg are separate steps**.
+  When `APPLE_*` is passed, the tauri CLI signs + notarizes + staples the `.app`, but only
+  signs the dmg. Without notarizing the dmg, a downloaded dmg is
+  `rejected / source=Unnotarized Developer ID` by
+  `spctl -a -t open --context context:primary-signature` (this was the state up to v0.3.0).
+  tauri-action does the build and upload in a single step and cannot insert dmg notarization
+  in between, so it is not used. The dmg goes through `notarytool submit --wait` (judged by both the exit code and
+  `status: Accepted`; on failure `notarytool log` is printed) →
+  `stapler staple` → `stapler validate` → `spctl --type open`, in that order.
+- **Two stages: draft → publish**. The last step of build creates the `v<version>`
+  Release as a draft (an existing draft is reused and retargeted to this run's commit),
+  uploads the dmg by ID, and after all builds succeed, the `publish` job
+  publishes it with `gh release edit --draft=false`. If a Windows leg is added to the matrix in the future,
+  this prevents publishing an incomplete Release where only one side succeeded. On rerun,
+  assets with the same name are deleted before uploading again. If a Release for the same tag is already published, it does nothing and fails.
+- **Only test runs on PRs**. `plan` is skipped on `pull_request`, and `build` /
+  `publish` are skipped along with it. `test` removes the automatic skip with `!cancelled()`, and
+  runs only for PRs or for "a version to be released" (so that a push to main that does not change the version
+  does not spin up a macOS runner).
+- **`test` cross-checks the major.minor of the Tauri crates and npm packages**
+  (`scripts/check-tauri-versions.mjs`). `tauri build` stops before building when these diverge,
+  but the PR `test` does not run `tauri build`, so a dependency update on only one side
+  would first fail in the release build (v0.1.2 was not published because of this). When upgrading
+  dependencies, upgrade `tauri` ↔ `@tauri-apps/api` and `tauri-plugin-*` ↔ `@tauri-apps/plugin-*`
+  together.
+- **The command name is `release`**. `publish` collides with a built-in npm/pnpm command.
+- **`pnpm exec tauri build`** calls the CLI directly (not `pnpm tauri build`).
+  The moment an inline assignment like `APPLE_SIGNING_IDENTITY='...' tauri` is added to the `tauri` script in
+  `package.json`, the env passed from the workflow would be silently overridden
+  (an inline shell assignment beats the inherited env). Calling the CLI directly makes the Secret the single source of truth.
+- **`concurrency` is `cancel-in-progress: false` + `queue: max`**. 1 push =
+  1 version, so if a run is cancelled, publishing that version is delayed
+  (the bump commit stays on main). The default `queue: single` keeps only one pending run,
+  and a new push wipes out the existing pending one, so `queue: max` is needed.
+  PR runs go into a separate group per commit so they do not queue behind releases.
+- **Every `uses:` is pinned to a commit SHA**. This job handles a certificate containing Apple's private key,
+  so if a tag were swapped, the secrets could be stolen. When updating, look up the new SHA using
+  the trailing `# v4` comment as a guide. For `dtolnay/rust-toolchain`, pin a SHA from the **master history**
+  (the SHA at the tip of the `stable` branch will be GC'd in the future and the run will fail).
+- **`persist-credentials: false`**. Do not leave a write-capable `GITHUB_TOKEN` in `.git/config`
+  (it could be picked up by `pnpm install` install scripts or third-party actions).
+- **The frontend build is separated into a step without Secrets**. `tauri build` launches
+  `beforeBuildCommand` (`pnpm build`) as a child process, and child processes inherit
+  environment variables. Without the separation, vite and its dependencies would run in an environment where they can read
+  `APPLE_PASSWORD`, and a single malicious dependency would be enough to exfiltrate it.
+  The signing build overlays `src-tauri/tauri.ci.conf.json` with `--config` to empty
+  `beforeBuildCommand` and avoid building twice.
+- **Local builds stay ad-hoc signed**. Leaving `signingIdentity: "-"` in `tauri.conf.json`
+  means a local build without the env is ad-hoc signed, while in CI `APPLE_SIGNING_IDENTITY`
+  overrides the config and signs with Developer ID (tauri-cli precedence: env > config).
+- **The Homebrew cask is updated from the tap side (the project does not push)**.
+  If the project pushed to the tap, a token that can write to the tap would have to be
+  distributed to every project. If the tap pulls instead, the `GITHUB_TOKEN` that Actions has
+  for its own repository is enough, and there are zero new secrets. The only cost is the delay until the next hourly run. The cask includes a `binary` stanza, so `brew install` alone links the executable into
+  Homebrew's bin (a manual `ln -s` is no longer needed).
 
-## 必要な Repository Secrets
+## Required Repository Secrets
 
-`ytyng/clipboard-palette` に以下 6 つ。
+The following 6 in `ytyng/clipboard-palette`.
 
-| Secret | 内容 |
+| Secret | Contents |
 | --- | --- |
-| `APPLE_CERTIFICATE` | Developer ID Application 証明書 + 秘密鍵の `.p12` を base64 したもの |
-| `APPLE_CERTIFICATE_PASSWORD` | `.p12` のパスワード |
+| `APPLE_CERTIFICATE` | The `.p12` of the Developer ID Application certificate + private key, base64-encoded |
+| `APPLE_CERTIFICATE_PASSWORD` | Password of the `.p12` |
 | `APPLE_SIGNING_IDENTITY` | `Developer ID Application: <Name> (<TeamID>)` |
-| `APPLE_ID` | Apple アカウントのメールアドレス |
-| `APPLE_PASSWORD` | App用パスワード (通常のパスワードは不可) |
-| `APPLE_TEAM_ID` | 10 桁の Team ID |
+| `APPLE_ID` | Email address of the Apple account |
+| `APPLE_PASSWORD` | App-specific password (the regular password does not work) |
+| `APPLE_TEAM_ID` | 10-character Team ID |
 
-workflow は最初に APPLE_* の 6 つが揃っているかを検査して、欠けていれば即失敗する。
-これが無いと「署名も公証もされていない dmg」が成功扱いで公開されてしまう。
-tap 用の token (`HOMEBREW_TAP_TOKEN`) はもう使わない。
+The workflow first checks that all 6 APPLE_* secrets are present and fails immediately if any are missing.
+Without this, "a dmg that is neither signed nor notarized" would be published as a success.
+The tap token (`HOMEBREW_TAP_TOKEN`) is no longer used.
 
-## 公開後の検証
+## Verification after publishing
 
-Release の dmg をダウンロードして実機確認する。
+Download the dmg from the Release and check it on a real machine.
 
 ```shell
 DMG=Clipboard-palette_X.Y.Z_universal.dmg
@@ -140,8 +139,8 @@ lipo -archs "$APP/Contents/MacOS/clipboard-palette"   # x86_64 arm64
 hdiutil detach -quiet /Volumes/Clipboard-palette
 ```
 
-Homebrew 側は (tap の次の毎時 run が成功した後に) cask の version / sha256 が新しい
-Release と一致しているかを確認する。待ちたくなければ tap の workflow を手で起動する。
+On the Homebrew side, (after the tap's next hourly run succeeds) check that the cask's version / sha256 match the new
+Release. If you do not want to wait, trigger the tap's workflow manually.
 
 ```shell
 gh workflow run update.yml -R ytyng/homebrew-tap
@@ -150,27 +149,27 @@ brew install --cask ytyng/tap/clipboard-palette
 clipboard-palette --help
 ```
 
-`source=Notarized Developer ID` と staple 成功が出れば、ユーザーがダウンロードして
-開いても Gatekeeper 警告は出ない。「署名されている」だけでは
-`APPLE_SIGNING_IDENTITY` が効いている確認にならないので、`Authority=` が Secret に
-入れた identity と一致することまで見ること。
+If `source=Notarized Developer ID` and a successful staple appear, users will not see a Gatekeeper warning
+when they download and open it. "It is signed" alone does not confirm that
+`APPLE_SIGNING_IDENTITY` took effect, so check all the way to `Authority=` matching the identity
+stored in the Secret.
 
-## 既知の弱点
+## Known weaknesses
 
-- **version 変更が紛れた PR をマージした瞬間に公開される**。version の変更は
-  `pnpm release` (独立したコミット) で行い、機能 PR に混ぜないこと。
-- **Rust 側のビルドスクリプトには依然として secrets が見える**。フロントエンドの
-  ビルドは分離したが、`tauri build` は署名・公証と一体で cargo のビルドを走らせる
-  ため、`APPLE_PASSWORD` を持つ環境で Rust 依存クレートの `build.rs` が実行される
-  (`GITHUB_TOKEN` は Build ステップには渡していない)。完全に塞ぐには「未署名で
-  ビルド → 別ステップで `.app` の codesign + notarytool + stapler を手動実行」まで
-  分解する必要がある。cargo の依存は `Cargo.lock` で固定されているため、現状は
-  このリスクを受け入れている。
-- `pnpm release` は `main` へ**直接 push** する。ブランチ保護 (PR 必須) を
-  掛けると破綻する。掛けるなら version bump を PR で出す運用にする (workflow 側は
-  そのままで動く)。
-- Windows ビルドは含めていない。必要になったら `release.yml` の matrix に
-  `windows-latest` / `--bundles nsis` の leg を足す (APPLE_* は
-  `matrix.platform == 'macos-latest'` の条件式で既に macOS 限定になっている)。
-  dmg の公証と draft へのアップロードのステップも macOS 限定なので、Windows の
-  成果物を draft に上げるステップは別に要る。
+- **Merging a PR that happens to include a version change publishes immediately**. Change the version with
+  `pnpm release` (a separate commit) and do not mix it into feature PRs.
+- **Rust build scripts can still see the secrets**. The frontend
+  build is separated, but `tauri build` runs the cargo build as one unit with signing and notarization,
+  so the `build.rs` of Rust dependency crates runs in an environment that has `APPLE_PASSWORD`
+  (`GITHUB_TOKEN` is not passed to the Build step). Closing this completely would require breaking it down into
+  "build unsigned → manually run codesign + notarytool + stapler on the `.app` in a separate step".
+  Cargo dependencies are pinned by `Cargo.lock`, so for now
+  this risk is accepted.
+- `pnpm release` **pushes directly** to `main`. It breaks if branch protection (PRs required)
+  is enabled. If you enable it, switch to submitting the version bump as a PR (the workflow side
+  works as-is).
+- Windows builds are not included. If needed, add a `windows-latest` / `--bundles nsis` leg to the matrix of
+  `release.yml` (APPLE_* is already limited to macOS by the
+  `matrix.platform == 'macos-latest'` condition).
+  The dmg notarization and draft upload steps are also macOS-only, so a separate step is needed
+  to upload the Windows artifacts to the draft.

@@ -1,151 +1,150 @@
+# clipboard-palette project details
 
-# clipboard-palette プロジェクト詳細
+## Overview
 
-## 概要
+A Tauri application that receives text from standard input and displays buttons for copying it to the clipboard.
 
-標準入力からテキストを受け取り、クリップボードにコピーするためのボタンを表示する Tauri アプリケーション。
+## Frameworks and tech stack
 
-## フレームワーク・技術スタック
+- **Tauri2**: Desktop application framework
+- **Svelte5**: Frontend framework  
+- **Tailwind4**: CSS framework
+- **Rust**: Backend language
+- **clap**: Command-line argument parser for Rust
 
-- **Tauri2**: デスクトップアプリケーションフレームワーク
-- **Svelte5**: フロントエンドフレームワーク  
-- **Tailwind4**: CSS フレームワーク
-- **Rust**: バックエンド言語
-- **clap**: Rust のコマンドライン引数パーサー
-
-## プロジェクト構成
+## Project structure
 
 ```
 clipboard-palette/
-├── src/                    # Svelte フロントエンド
+├── src/                    # Svelte frontend
 │   ├── routes/
-│   │   ├── +page.svelte   # メインページ
-│   │   ├── Help.svelte    # ヘルプコンポーネント
-│   │   ├── TextCard.svelte # テキストカードコンポーネント
-│   │   └── licenses/+page.svelte # Third-Party Licenses ウィンドウ
+│   │   ├── +page.svelte   # Main page
+│   │   ├── Help.svelte    # Help component
+│   │   ├── TextCard.svelte # Text card component
+│   │   └── licenses/+page.svelte # Third-Party Licenses window
 │   └── app.html
-├── src-tauri/              # Tauri バックエンド
+├── src-tauri/              # Tauri backend
 │   ├── src/
-│   │   ├── lib.rs         # メインロジック
-│   │   ├── notices.rs     # --license / Third-Party Licenses (THIRD-PARTY-NOTICES.txt を埋め込む)
-│   │   ├── open_target.rs # オープンモード (Shift + クリックで URL / パスを開く)
-│   │   └── main.rs        # エントリーポイント
-│   └── Cargo.toml         # Rust 依存関係
-├── tests/                  # テストスクリプト
-└── build/                  # ビルド出力
+│   │   ├── lib.rs         # Main logic
+│   │   ├── notices.rs     # --license / Third-Party Licenses (embeds THIRD-PARTY-NOTICES.txt)
+│   │   ├── open_target.rs # Open mode (Shift + click opens a URL / path)
+│   │   └── main.rs        # Entry point
+│   └── Cargo.toml         # Rust dependencies
+├── tests/                  # Test scripts
+└── build/                  # Build output
 ```
 
-## 主要機能
+## Main features
 
-### コマンドライン引数処理
+### Command-line argument handling
 
-`clap` ライブラリを使用して以下のオプションをサポート：
+The following options are supported using the `clap` library:
 
-- `--multiline` / `-m`: 改行で分割
-- `--split-empty-line[=N]` / `-s [N]`: N行以上の空行で分割（デフォルト1）
-- `--json` / `-j`: JSON形式で解析
-- `--theme=auto|light|dark`: カラーテーマの指定 (デフォルト auto = OS 設定に従う)。ウィンドウ内容とタイトルバーの両方に適用される
-- `--input <FILE>` / `-i`: 標準入力の代わりにファイルから読む。空ファイルはエラー (サンプルデータにしない)。
-  Claude Code はリダイレクト・パイプ・`$(...)` を含む呼び出しを excludedCommands に一致してもサンドボックス内で
-  動かすため、サンドボックス外で起動させるにはファイルを引数で渡す必要がある
-- `--license`: アプリ自身の MIT ライセンスと `THIRD-PARTY-NOTICES.txt` を stdout に出して終了する (stdin を読まず、ウィンドウも出さない)
+- `--multiline` / `-m`: Split on newlines
+- `--split-empty-line[=N]` / `-s [N]`: Split on runs of N or more empty lines (default 1)
+- `--json` / `-j`: Parse as JSON
+- `--theme=auto|light|dark`: Specify the color theme (default auto = follow the OS setting). Applied to both the window contents and the title bar
+- `--input <FILE>` / `-i`: Read from a file instead of standard input. An empty file is an error (it does not fall back to sample data).
+  Claude Code runs invocations containing redirects, pipes, or `$(...)` inside the sandbox even when they match excludedCommands,
+  so to launch the app outside the sandbox the file has to be passed as an argument
+- `--license`: Print the app's own MIT license and `THIRD-PARTY-NOTICES.txt` to stdout and exit (does not read stdin and does not show a window)
 
-### データ処理モード
+### Data processing modes
 
-1. **normal**: そのままのテキストを表示
-2. **multiline**: 改行で分割して各行をボタン化
-3. **split-empty-line**: 指定した数の空行で分割してセクション化
-4. **json**: JSON配列を解析してlabel/textペアを生成
+1. **normal**: Display the text as-is
+2. **multiline**: Split on newlines and turn each line into a button
+3. **split-empty-line**: Split into sections on the specified number of empty lines
+4. **json**: Parse a JSON array and produce label/text pairs
 
-### テーマ制御
+### Theme control
 
-- Tailwind の `dark:` バリアントは `@custom-variant` で `html[data-theme="dark"]` ベースに変更している (src/app.css)
-- ウィンドウは tauri.conf.json で `"create": false` にし、Rust の setup で `WebviewWindowBuilder::from_config` を使って組み立てる。これは `initialization_script` で `--theme` の値 (`window.__CLIPBOARD_PALETTE_THEME__`) をページへ注入するため
-- src/app.html のインラインスクリプトが、注入値 → OS 設定の順で `data-theme` を決める。初回描画より前に確定するのでちらつかない
-- 起動データ取得後に `src/lib/theme.ts` の `applyTheme()` を呼ぶ。`auto` のときは `matchMedia` を監視して OS 側の切り替えにも追従する
-- タイトルバーは `WebviewWindow::set_theme()` で設定する (macOS ではアプリ全体に効く)
+- Tailwind's `dark:` variant is changed with `@custom-variant` to be based on `html[data-theme="dark"]` (src/app.css)
+- The window is set to `"create": false` in tauri.conf.json and assembled in the Rust setup with `WebviewWindowBuilder::from_config`. This is so that `initialization_script` can inject the `--theme` value (`window.__CLIPBOARD_PALETTE_THEME__`) into the page
+- The inline script in src/app.html decides `data-theme` from the injected value, then the OS setting. It is decided before the first paint, so there is no flicker
+- After the startup data is fetched, `applyTheme()` in `src/lib/theme.ts` is called. With `auto`, it watches `matchMedia` and also follows OS-side switches
+- The title bar is set with `WebviewWindow::set_theme()` (on macOS this applies to the whole app)
 
-### オープンモード (src-tauri/src/open_target.rs)
+### Open mode (src-tauri/src/open_target.rs)
 
-Shift を押している間、テキストが URL かファイルパスのカードは下線付きになり、クリックで
-コピーの代わりに開く (URL はデフォルトブラウザ、パスは Finder で選択状態にして表示)。
+While Shift is held, cards whose text is a URL or a file path are underlined, and clicking them
+opens them instead of copying (URLs in the default browser; paths are shown selected in Finder).
 
-- 判定 (`classify`) は Rust 側でだけ行い、`ClipboardItem.open_kind` (`"url"` / `"path"` / null)
-  としてフロントに渡す。`--json` の入力に `open_kind` を書いても無視される (`skip_deserializing`)
-- **フロントから送るのは item の index だけ。** `open_item` は state からテキストを読み直して
-  もう一度判定してから開く。web view から任意の文字列を開かせないため
-- URL は http / https だけ。`file:` や独自スキームはアプリを起動しうるので開かない。
-  `//` の直後にホストが書かれていること (`https://?q` / `https:///path` は URL 扱いしない)
-- 1 行のテキストだけが対象。相対パスはプロセスの cwd (起動したシェルのディレクトリ) 基準、
-  `~` はホームに展開する。Windows 形式 (`C:\` / UNC) は Windows でだけパス扱い
-  (macOS では相対パスになり cwd 下の無関係なフォルダを開くため)
-- **パスは必ず reveal (`reveal_item_in_dir`) し、`open_path` は使わない。** `.app` バンドルは
-  ディレクトリなので、open するとアプリが起動する。存在しないパスは最も近い既存の祖先を reveal する
-- 開く処理は `tauri-plugin-opener` の関数を Rust から直接呼んでいる (プラグインの登録も
-  JS 側の import も無いので、capability への opener 権限追加は不要)
-- Shift の状態は `+page.svelte` が keydown / keyup / mousemove の `shiftKey` で追い、ウィンドウの
-  blur で解除する。クリック時の分岐は click イベント自身の `shiftKey` で決める
+- Classification (`classify`) is done only on the Rust side and passed to the frontend as `ClipboardItem.open_kind`
+  (`"url"` / `"path"` / null). Writing `open_kind` in `--json` input is ignored (`skip_deserializing`)
+- **The frontend sends only the item's index.** `open_item` re-reads the text from state,
+  classifies it again, and then opens it. This is so the web view cannot make the app open an arbitrary string
+- Only http / https URLs. `file:` and custom schemes can launch apps, so they are not opened.
+  A host must be written right after `//` (`https://?q` / `https:///path` are not treated as URLs)
+- Only single-line text is eligible. Relative paths are resolved against the process cwd (the directory of the shell that launched it),
+  and `~` is expanded to the home directory. Windows-style paths (`C:\` / UNC) are treated as paths only on Windows
+  (on macOS they would become relative paths and open an unrelated folder under cwd)
+- **Paths are always revealed (`reveal_item_in_dir`); `open_path` is never used.** An `.app` bundle
+  is a directory, so opening it would launch the app. For a nonexistent path, the nearest existing ancestor is revealed
+- Opening is done by calling `tauri-plugin-opener` functions directly from Rust (the plugin is not registered
+  and nothing is imported on the JS side, so no opener permission needs to be added to the capability)
+- `+page.svelte` tracks the Shift state with `shiftKey` of keydown / keyup / mousemove, and clears it on window
+  blur. The branch on click is decided by the `shiftKey` of the click event itself
 
-### ライフサイクルログ (src-tauri/src/lifecycle.rs)
+### Lifecycle log (src-tauri/src/lifecycle.rs)
 
-呼び出し元 (シェルスクリプトや AI エージェント) が **stdout だけ**で起動の成否を
-判定できるようにするためのログ。全行が `[lifecycle]` で始まる。
+A log that lets the caller (a shell script or an AI agent) determine whether startup succeeded
+**from stdout alone**. Every line starts with `[lifecycle]`.
 
-- 起動直後に pid と、同じプログラム名で動いている他プロセスを出す。前回の孤児が
-  残っている状況をここで見つけられる。検知に失敗した場合は `none` ではなく
-  `unknown (理由)` を出す (失敗を「他に無い」と読ませない)
-- ウィンドウはイベントループが `RunEvent::Ready` になった時点で可視性を測り、
-  `startup ok: window is visible` / `startup incomplete: ...` のどちらかで結論を出す。
-  呼び出し元はこの 1 行だけ見ればよい。最小化されている場合も `startup incomplete`
-  にする (可視フラグは立つが画面には出ていないため)。可視・最小化のどちらかが取得
-  できなかった場合も `startup incomplete` に倒す — 偽の「起動できた」を出さないための
-  ログなので、確認できていない状態を ok と報告してはいけない
-- 終了理由は `RunEvent` (`ExitRequested` / `Exit` / `WindowEvent`)、シグナル
-  (`libc::signal` で SIGINT / SIGTERM / SIGHUP)、パニック (panic hook) の 3 経路で出す。
-  SIGKILL は捕捉できないため、`exit:` 行が 1 つも無いまま終わった = 強制終了、と読む
-- ウィンドウの build は `RunEvent` より前なので、失敗は `setup` 内で
-  `startup failed:` として出す。パニックは stderr にしか出ないため、panic hook で
-  stdout にも `exit: reason=panic` を出している
-- **起動タイムアウト (`--startup-timeout`、既定 10 秒、0 で無効)**: メインページが
-  `get_clipboard_data` を呼んだ時点で `page loaded` を出す (IPC が届いたという意味で、
-  可視性の保証ではない。成功判定は `startup ok` と両方で行う)。watchdog は stdin を読んだ後、
-  Tauri の初期化より前に起動する (GUI バックエンドの初期化で止まった場合も拾うため)。それまでに時間切れになったら
-  `startup failed: the page did not load ...` と `exit: reason=startup-timeout code=1` を出し、
-  stderr にサンドボックスの対処を書いて exit 1 する。Claude Code の
-  サンドボックス (Seatbelt) 内ではウインドウが出ないのにプロセスは落ちず居残るため。
-  ウインドウのフラグはアプリ自身の状態なので、この状況でも `visible=true` になりうる。
-  watchdog は別スレッドで、メインスレッドにもイベントループにも触れずに `process::exit` する
-  (イベントループが止まっていても発火させるため)。**サンドボックス内で本当に page loaded が
-  出ないか・フラグがどうなるかは Linux では確認できておらず、macOS の実機確認が残っている**
-- 他インスタンスの検知は `ps -A -o pid=,comm=` を使う。macOS は comm に実行ファイルの
-  フルパス、Linux は 15 文字に切り詰めた basename を出すので、両方に一致するよう
-  比較している (`is_same_program`)。この比較と ps 出力のパースには単体テストがある
+- Right after startup, it prints the pid and other processes running under the same program name. This is where
+  you can spot orphans left over from a previous run. If detection fails, it prints `unknown (reason)`
+  rather than `none` (so a failure is not read as "there are no others")
+- The window's visibility is measured when the event loop reaches `RunEvent::Ready`, and a conclusion is printed as
+  either `startup ok: window is visible` or `startup incomplete: ...`.
+  The caller only needs to look at this one line. A minimized window is also reported as `startup incomplete`
+  (the visible flag is set, but it is not on screen). If either visibility or minimization could not be
+  obtained, it also falls back to `startup incomplete` — the log exists to avoid a false "it started",
+  so an unconfirmed state must not be reported as ok
+- Exit reasons are printed through three paths: `RunEvent` (`ExitRequested` / `Exit` / `WindowEvent`), signals
+  (SIGINT / SIGTERM / SIGHUP via `libc::signal`), and panics (panic hook).
+  SIGKILL cannot be caught, so ending without a single `exit:` line means it was force-killed
+- The window is built before `RunEvent`, so a failure is printed inside `setup` as
+  `startup failed:`. Panics only go to stderr, so the panic hook also prints
+  `exit: reason=panic` to stdout
+- **Startup timeout (`--startup-timeout`, default 10 seconds, 0 disables it)**: `page loaded` is printed when the main page
+  calls `get_clipboard_data` (it means the IPC arrived; it does not guarantee
+  visibility. Success is judged by both this and `startup ok`). The watchdog starts after stdin is read
+  and before Tauri initialization (so it also catches a hang during GUI backend initialization). If time runs out before then, it prints
+  `startup failed: the page did not load ...` and `exit: reason=startup-timeout code=1`,
+  writes sandbox workarounds to stderr, and exits 1. This is because inside Claude Code's
+  sandbox (Seatbelt) no window appears, yet the process does not die and lingers.
+  The window flags are the app's own state, so `visible=true` can happen even in this situation.
+  The watchdog is a separate thread and calls `process::exit` without touching the main thread or the event loop
+  (so it fires even if the event loop is stuck). **Whether page loaded really never appears inside the sandbox,
+  and what the flags look like there, could not be confirmed on Linux; verification on a real macOS machine is still pending**
+- Other instances are detected with `ps -A -o pid=,comm=`. macOS prints the full path of the executable
+  in comm, while Linux prints the basename truncated to 15 characters, so the comparison
+  matches both (`is_same_program`). This comparison and the parsing of ps output have unit tests
 
-出力例と各行の意味は README.md の「Lifecycle Log」節にまとめてある。
+Sample output and the meaning of each line are summarized in the "Lifecycle Log" section of README.md.
 
-### 依存ライブラリのライセンス表示 (src-tauri/src/notices.rs)
+### License notices for dependencies (src-tauri/src/notices.rs)
 
-`THIRD-PARTY-NOTICES.txt` は `scripts/generate-third-party-notices.sh` (`pnpm notices`) の生成物で、
-`notices.rs` が `include_str!` で埋め込み、`--license` とアプリメニューの Third-Party Licenses
-(About の直下。`licenses` ウィンドウ = `src/routes/licenses/+page.svelte`) に出す。
+`THIRD-PARTY-NOTICES.txt` is generated by `scripts/generate-third-party-notices.sh` (`pnpm notices`);
+`notices.rs` embeds it with `include_str!` and shows it via `--license` and the app menu's Third-Party Licenses
+(right below About; the `licenses` window = `src/routes/licenses/+page.svelte`).
 
-- **依存を足す・上げる時は `pnpm notices` を流し直してコミットする。** notices が `Cargo.lock` /
-  `pnpm-lock.yaml` と食い違うと `cargo test` が落ちる
-- Rust 側は cargo-about (`cargo install cargo-about --locked --features cli`)。`src-tauri/about.toml`
-  の `targets` で配布ターゲット (macOS の 2 つ) だけに絞っている。Windows / Linux 専用の crate は載らない
-- npm 側は `package.json` の `dependencies` ではなく、**vite が web view に bundle するパッケージ**を
-  スクリプト内の `NPM_PACKAGES` に列挙している (`@tailwindcss/vite` はビルドツール、
-  `@tauri-apps/plugin-*` はフロントから import していない、SvelteKit のランタイムは devDependencies)。
-  フロントで新しいパッケージを import したら `NPM_PACKAGES` に足す
-- メニューは `Menu::default` に項目を 1 つ挿入したもの。macOS だけで設定する (他 OS はメニューバー無しのまま)
+- **When adding or upgrading dependencies, rerun `pnpm notices` and commit the result.** If the notices disagree with `Cargo.lock` /
+  `pnpm-lock.yaml`, `cargo test` fails
+- The Rust side uses cargo-about (`cargo install cargo-about --locked --features cli`). `targets` in `src-tauri/about.toml`
+  narrows it to the distribution targets only (the two macOS ones). Windows / Linux-only crates are not listed
+- The npm side lists, in `NPM_PACKAGES` inside the script, **the packages vite bundles into the web view**,
+  not the `dependencies` of `package.json` (`@tailwindcss/vite` is a build tool,
+  `@tauri-apps/plugin-*` are not imported from the frontend, and the SvelteKit runtime is in devDependencies).
+  When the frontend imports a new package, add it to `NPM_PACKAGES`
+- The menu is `Menu::default` with one item inserted. It is set only on macOS (other OSes still have no menu bar)
 
-### Tauri コマンド
+### Tauri commands
 
-- `get_clipboard_data`: フロントエンドからバックエンドのデータを取得
-- `open_item`: オープンモードで index の item を開く (open_target.rs)
-- `third_party_notices`: 埋め込んだ `THIRD-PARTY-NOTICES.txt` を返す (licenses ウィンドウ用)
+- `get_clipboard_data`: The frontend fetches data from the backend
+- `open_item`: Opens the item at the given index in open mode (open_target.rs)
+- `third_party_notices`: Returns the embedded `THIRD-PARTY-NOTICES.txt` (for the licenses window)
 
-## 依存関係
+## Dependencies
 
 ### Rust (src-tauri/Cargo.toml)
 
@@ -161,66 +160,66 @@ clap = { version = "4", features = ["derive"] }
 tauri-plugin-cli = "2.4.1"
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"   # シグナル受信時の終了ログのみに使う (lifecycle.rs)
+libc = "0.2"   # Used only for the exit log on signal receipt (lifecycle.rs)
 ```
 
 ### Node.js (package.json)
 
-主要な依存関係は Svelte5, Tailwind4, Vite など。
+The main dependencies are Svelte5, Tailwind4, Vite, and so on.
 
-Tauri の crate と npm パッケージ (`tauri` ↔ `@tauri-apps/api`、`tauri-plugin-*` ↔ `@tauri-apps/plugin-*`)
-は major.minor を揃えること。ずれると `tauri build` がビルド前に止まる。PR CI の
-`scripts/check-tauri-versions.mjs` が検査する。
+Keep the major.minor of the Tauri crates and npm packages (`tauri` ↔ `@tauri-apps/api`, `tauri-plugin-*` ↔ `@tauri-apps/plugin-*`)
+in sync. If they diverge, `tauri build` stops before building. `scripts/check-tauri-versions.mjs`
+in PR CI checks this.
 
-## 開発・ビルド
+## Development and build
 
-### 開発モード
+### Development mode
 
 ```bash
 pnpm tauri dev
 ```
 
-### リリースビルド  
+### Release build  
 
 ```bash
 pnpm tauri build
 ```
 
-### テスト
+### Tests
 
 ```bash
-# 各テストスクリプトを実行
+# Run each test script
 ./tests/simple-text.sh
 ./tests/multi-line-text.sh  
 ./tests/json.sh
 ```
 
-各スクリプトは `tests/config.sh` を source して `run_clipboard_palette` 関数経由でアプリを起動する。
+Each script sources `tests/config.sh` and launches the app through the `run_clipboard_palette` function.
 
-- `THEME` (`auto` / `light` / `dark`, デフォルト `auto`): `--theme` に渡される
-- `RUN_MODE` (`dev` / `release`, デフォルト `dev`): デバッグビルドを `cargo run` で使うか、ビルド済みバイナリを使うか
+- `THEME` (`auto` / `light` / `dark`, default `auto`): passed to `--theme`
+- `RUN_MODE` (`dev` / `release`, default `dev`): whether to use a debug build via `cargo run` or the already built binary
 
-環境変数で一時的に上書きできる (例: `THEME=dark ./tests/simple-text.sh`)。
+They can be overridden temporarily with environment variables (e.g. `THEME=dark ./tests/simple-text.sh`).
 
-`RUN_MODE=dev` では vite (`node_modules/.bin/vite dev`) を先に起動してから `cargo run` する。
-1420 が別のサーバーに使われている場合はエラーで止まる (vite は strictPort のため)。
-`pnpm tauri dev` はパイプした標準入力をアプリまで渡さないため使わない。
-なお `pnpm tauri dev` にアプリ用の引数を渡す場合は `--` が2つ必要
-(`pnpm tauri dev -- -- --theme dark`。tauri CLI / cargo が1つずつ消費する)。
+With `RUN_MODE=dev`, vite (`node_modules/.bin/vite dev`) is started first, then `cargo run`.
+If port 1420 is used by another server, it stops with an error (vite uses strictPort).
+`pnpm tauri dev` is not used because it does not pass piped standard input through to the app.
+Note that passing app arguments to `pnpm tauri dev` requires two `--`
+(`pnpm tauri dev -- -- --theme dark`; the tauri CLI and cargo each consume one).
 
-## コーディングルール
+## Coding rules
 
-- Tauri2, Svelte5, Tailwind4 の使い方は、Context7 MCP サーバーを参照
-- Rust コードは標準的な Rust スタイルに従う
-- 空行のみの行は作成しない
-- ソースコード内のコメントは英語で記述する
+- For how to use Tauri2, Svelte5, and Tailwind4, refer to the Context7 MCP server
+- Rust code follows standard Rust style
+- Do not create lines that contain only whitespace
+- Write comments in source code in English
 
-## macOS アプリアイコン
+## macOS app icon
 
-`bash scripts/generate-macos-icons.sh` で固定原画像と `layout.json` から生成する。
-小さい @1x は背景全面・図柄を中央80%、大サイズは背景外側に四辺10%の透明余白。
-16pt @2x と32pt @1xは別画像。小サイズICNSはARGB、大サイズを先頭に並べる。
-`tauri.macos.conf.json` で Assets.car を Resources 直下へ置き、Info.plist の
-CFBundleIconName で登録する。CLI直接起動時は `set_dock_icon` がICNSを埋め込んで使う。
-描画検証は `swift scripts/macos-icon.swift verify resources/app-icons/AppIcon.iconset src-tauri/icons ClipboardPalette`。
-原画像・登録・検証の詳細は `resources/app-icons/README.md`。Windows/Web用PNG・ICOは別素材として維持する。
+Generated with `bash scripts/generate-macos-icons.sh` from a fixed source image and `layout.json`.
+Small @1x sizes fill the whole background with the artwork centered at 80%; large sizes have a 10% transparent margin on all four sides outside the background.
+16pt @2x and 32pt @1x are separate images. Small-size ICNS entries are ARGB, and the large sizes are placed first.
+`tauri.macos.conf.json` puts Assets.car directly under Resources, and it is registered with
+CFBundleIconName in Info.plist. When the CLI is launched directly, `set_dock_icon` embeds and uses the ICNS.
+Render verification: `swift scripts/macos-icon.swift verify resources/app-icons/AppIcon.iconset src-tauri/icons ClipboardPalette`.
+Details on the source image, registration, and verification are in `resources/app-icons/README.md`. The PNG/ICO for Windows/Web are maintained as separate assets.
